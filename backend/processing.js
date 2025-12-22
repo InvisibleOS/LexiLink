@@ -35,20 +35,29 @@ async function openAIChat(messages, options = {}) {
     }
 }
 
-// Express mode: broken speech -> suggestions[]
-async function getExpressSuggestions(userText) {
+// Express mode: broken speech -> suggestions[] + bestSuggestion
+async function getExpressSuggestions(userText, history = []) {
+    // Format history for the prompt
+    const historyText = history.map(msg => `${msg.role === 'user' ? 'User' : 'Partner'}: "${msg.content}"`).join("\n");
+
     const prompt = `
 You are helping a person with aphasia communicate. They often speak in broken, incomplete, or keyword-based language.
 
-User said: "${userText}"
+Conversation History:
+${historyText}
+
+Current User Input (Broken Speech): "${userText}"
 
 Your job:
-1. Infer the intended meaning from the broken speech.
+1. Infer the intended meaning from the broken speech, using the conversation history as context.
 2. Reconstruct it into grammatical, complete, and polite English sentences.
 3. Provide 3 diverse options ranging from casual to slightly formal.
-4. The sentences should be fully formed and detailed enough to convey the user's likely intent clearly.
+4. Select the "best" option that fits the conversation flow most naturally.
 5. Return ONLY valid JSON like:
-{"suggestions": ["Option 1", "Option 2", "Option 3"]}
+{
+  "suggestions": ["Option 1", "Option 2", "Option 3"],
+  "bestSuggestion": "Option 1"
+}
 `;
 
     try {
@@ -58,9 +67,12 @@ Your job:
                 { role: "user", content: prompt },
             ],
             {
-                temperature: 0.5, // Slightly higher creative freedom for inference
+                temperature: 0.5,
                 max_tokens: 300,
-                mockResponse: JSON.stringify({ suggestions: ["I would like some water, please.", "Could you help me with this?", "I am feeling tired today."] })
+                mockResponse: JSON.stringify({
+                    suggestions: ["I would like some water, please.", "Could you help me with this?", "I am feeling tired today."],
+                    bestSuggestion: "I would like some water, please."
+                })
             }
         );
 
@@ -69,17 +81,23 @@ Your job:
             parsed = JSON.parse(content);
         } catch (e) {
             console.error("Failed to parse JSON from OpenAI in getExpressSuggestions:", content);
-            parsed = { suggestions: [content.trim()] };
+            parsed = { suggestions: [content.trim()], bestSuggestion: content.trim() };
         }
 
         if (!Array.isArray(parsed.suggestions) || parsed.suggestions.length === 0) {
             parsed.suggestions = [userText];
         }
+        if (!parsed.bestSuggestion) {
+            parsed.bestSuggestion = parsed.suggestions[0];
+        }
 
-        return parsed.suggestions;
+        return parsed; // Returns { suggestions: [], bestSuggestion: "" }
     } catch (error) {
         console.error("Error in getExpressSuggestions:", error.message);
-        return ["Error generating suggestions.", "Please try again later.", "Check backend logs."];
+        return {
+            suggestions: ["Error generating suggestions.", "Please try again later.", "Check backend logs."],
+            bestSuggestion: "Error generating suggestions."
+        };
     }
 }
 
