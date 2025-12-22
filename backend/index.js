@@ -29,15 +29,16 @@ app.get("/health", (req, res) => {
  */
 app.post("/api/express", async (req, res) => {
   try {
-    const { text } = req.body || {};
+    const { text, history } = req.body || {};
     if (!text || !text.trim()) {
       return res.status(400).json({ error: "text is required" });
     }
 
-    const suggestions = await getExpressSuggestions(text);
+    const { suggestions, bestSuggestion } = await getExpressSuggestions(text, history);
     res.json({
       transcript: text,
       suggestions,
+      bestSuggestion,
     });
   } catch (err) {
     console.error("Error in /api/express:", err.response?.data || err.message || err);
@@ -102,15 +103,25 @@ app.post("/api/express/audio", upload.single("audio"), async (req, res) => {
     // 1. STT
     const transcript = await transcribeAudioBuffer(req.file.buffer);
     if (!transcript) {
-        return res.json({ transcript: "", suggestions: [] });
+      return res.json({ transcript: "", suggestions: [] });
     }
 
     // 2. Processing
-    const suggestions = await getExpressSuggestions(transcript);
-    
+    let history = [];
+    if (req.body.history) {
+      try {
+        history = typeof req.body.history === 'string' ? JSON.parse(req.body.history) : req.body.history;
+      } catch (e) {
+        console.warn("Failed to parse history in /api/express/audio", e);
+      }
+    }
+
+    const { suggestions, bestSuggestion } = await getExpressSuggestions(transcript, history);
+
     res.json({
       transcript,
       suggestions,
+      bestSuggestion,
     });
   } catch (err) {
     console.error("Error in /api/express/audio:", err.message || err);
@@ -120,29 +131,29 @@ app.post("/api/express/audio", upload.single("audio"), async (req, res) => {
 
 // Listen mode: Audio -> Transcript -> Simplified
 app.post("/api/listen/audio", upload.single("audio"), async (req, res) => {
-    try {
-      if (!req.file) {
-        return res.status(400).json({ error: "audio file is required" });
-      }
-  
-      // 1. STT
-      const transcript = await transcribeAudioBuffer(req.file.buffer);
-      if (!transcript) {
-          return res.json({ transcript: "", simplified: "" });
-      }
-  
-      // 2. Processing
-      const simplified = await simplifySpeech(transcript);
-      
-      res.json({
-        transcript,
-        simplified,
-      });
-    } catch (err) {
-      console.error("Error in /api/listen/audio:", err.message || err);
-      res.status(500).json({ error: "Internal server error" });
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "audio file is required" });
     }
-  });
+
+    // 1. STT
+    const transcript = await transcribeAudioBuffer(req.file.buffer);
+    if (!transcript) {
+      return res.json({ transcript: "", simplified: "" });
+    }
+
+    // 2. Processing
+    const simplified = await simplifySpeech(transcript);
+
+    res.json({
+      transcript,
+      simplified,
+    });
+  } catch (err) {
+    console.error("Error in /api/listen/audio:", err.message || err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 // Global error handler (fallback)
 app.use((err, req, res, next) => {

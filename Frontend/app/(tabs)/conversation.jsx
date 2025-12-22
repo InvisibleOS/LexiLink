@@ -5,6 +5,7 @@ import {
   StyleSheet,
   Pressable,
   SafeAreaView,
+  Platform,
 } from 'react-native'
 import {
   useLocalSearchParams,
@@ -30,10 +31,30 @@ export default function ConversationScreen() {
   const [isRecording, setIsRecording] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [suggestions, setSuggestions] = useState([]) // For Speak Mode
+  const [bestSuggestion, setBestSuggestion] = useState(null) // New: Best option
   const [simplifiedText, setSimplifiedText] = useState('') // For Listen Mode
+
+  // New: Conversation History State
+  const [conversationHistory, setConversationHistory] = useState([])
+
+  // VAD State
+  const lastAudioDetected = React.useRef(Date.now())
+  const SILENCE_THRESHOLD_DB = -45 // Adjustable
+  const isRecordingRef = React.useRef(false); // To track in callbacks without stale closures
 
   const isSpeakMode = mode === 'SPEAK'
   const isListenMode = mode === 'LISTEN'
+
+  // Auto-Start Handling when mode changes
+  React.useEffect(() => {
+    // Small delay to ensure cleanup of previous mode
+    const timer = setTimeout(() => {
+      if (!isRecordingRef.current) {
+        startRecording();
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [mode]);
 
 
   useFocusEffect(
@@ -42,7 +63,10 @@ export default function ConversationScreen() {
         setMode(startMode)
         setDisplayedSentence('')
         setSuggestions([])
+        setBestSuggestion(null)
         setSimplifiedText('')
+        // Optionally reset history?? No, context is good to keep. 
+        // setConversationHistory([]) 
       }
     }, [startMode])
   )
@@ -50,9 +74,14 @@ export default function ConversationScreen() {
   // --- Audio Handlers ---
   const startRecording = async () => {
     try {
+      // Cleanup any existing
+      if (recording) {
+        try { await recording.stopAndUnloadAsync() } catch (e) { }
+      }
+
       const perm = await Audio.requestPermissionsAsync()
       if (perm.status !== 'granted') {
-        alert('Permission to access microphone is required!')
+        // alert('Permission to access microphone is required!') // Silent fail prefer
         return
       }
 
@@ -61,34 +90,78 @@ export default function ConversationScreen() {
         playsInSilentModeIOS: true,
       })
 
-      const { recording } = await Audio.Recording.createAsync(
+      const { recording: newRecording } = await Audio.Recording.createAsync(
         Audio.RecordingOptionsPresets.HIGH_QUALITY
       )
-      setRecording(recording)
+
+      setRecording(newRecording)
       setIsRecording(true)
+      isRecordingRef.current = true;
+      lastAudioDetected.current = Date.now();
+
+      // VAD Monitoring
+      newRecording.setOnRecordingStatusUpdate((status) => {
+        if (!isRecordingRef.current) return;
+
+        if (status.metering > SILENCE_THRESHOLD_DB) {
+          // Speech Detected
+          lastAudioDetected.current = Date.now();
+          //  console.log("Speaking...", status.metering);
+        } else {
+          // Silence
+          const timeSilence = Date.now() - lastAudioDetected.current;
+          if (timeSilence > 5000) { // 5 Seconds Spec
+            console.log("Silence limit reached. Stopping...");
+            stopRecordingLogic(newRecording);
+          }
+        }
+      });
+      // Enable metering
+      await newRecording.setProgressUpdateInterval(200);
+
     } catch (err) {
       console.error('Failed to start recording', err)
       setIsRecording(false)
+      isRecordingRef.current = false;
     }
   }
 
-  const stopRecording = async () => {
-    if (!recording) return
+  // Wrapper for manual button (if we keep it) or VAD trigger
+  const stopRecording = () => stopRecordingLogic(recording)
+
+  const stopRecordingLogic = async (recInstance) => {
+    if (!recInstance) return
+
+    // Prevent double calling
+    if (!isRecordingRef.current) return;
+    isRecordingRef.current = false;
     setIsRecording(false)
     setIsLoading(true)
 
     try {
-      await recording.stopAndUnloadAsync()
-      const uri = recording.getURI()
+      await recInstance.stopAndUnloadAsync()
+      const uri = recInstance.getURI()
       setRecording(null)
 
       // Upload to Backend
       const formData = new FormData()
-      formData.append('audio', {
-        uri,
-        type: 'audio/m4a',
-        name: 'recording.m4a',
-      })
+
+      // Fix for Web: fetch blob
+      if (Platform.OS === 'web') {
+        const resp = await fetch(uri);
+        const blob = await resp.blob();
+        formData.append('audio', blob, 'recording.m4a');
+      } else {
+        // Native
+        formData.append('audio', {
+          uri,
+          type: 'audio/m4a',
+          name: 'recording.m4a',
+        })
+      }
+
+      // Send History
+      formData.append('history', JSON.stringify(conversationHistory))
 
       const endpoint = isSpeakMode ? '/api/express/audio' : '/api/listen/audio'
       console.log('Uploading to:', BACKEND_URL + endpoint)
@@ -96,31 +169,54 @@ export default function ConversationScreen() {
       const response = await fetch(`${BACKEND_URL}${endpoint}`, {
         method: 'POST',
         body: formData,
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
+        // headers: { 'Content-Type': 'multipart/form-data' }, // Remove for fetch+FormData
       })
+
+      if (!response.ok) {
+        throw new Error(`Server status: ${response.status}`);
+      }
 
       const data = await response.json()
       console.log('Backend response:', data)
 
       if (isSpeakMode) {
-        if (data.suggestions) {
-          setSuggestions(data.suggestions)
-        }
+        // Show context
         if (data.transcript) {
-          // Optionally show transcript immediately?
+          // REMOVED onscreen display per user request
+          console.log("TRANSCRIPT:", data.transcript);
+          setConversationHistory(prev => [...prev, { role: 'user', content: data.transcript }]);
+        }
+
+        if (data.bestSuggestion) {
+          console.log("Auto-selecting Best Suggestion:", data.bestSuggestion);
+          setDisplayedSentence(data.bestSuggestion);
+
+          // Optionally add simplified/best text to history? 
+          // The user transcript is already added. Let's keep it clean.
+
+          // Auto-Switch to Listen Mode
+          setTimeout(() => {
+            console.log("Auto-switching to LISTEN...");
+            setMode('LISTEN');
+          }, AUTO_SWITCH_DELAY);
         }
       } else {
         // Listen Mode
         if (data.simplified) {
           setSimplifiedText(data.simplified)
+          setConversationHistory(prev => [...prev, { role: 'partner', content: data.simplified }])
+
+          // Auto-Switch after reading time (e.g., 4 seconds)
+          setTimeout(() => {
+            console.log("Auto-switching to SPEAK...");
+            setMode('SPEAK');
+          }, 4000);
         }
       }
 
     } catch (err) {
       console.error('Error processing audio:', err)
-      alert('Error connecting to backend')
+      alert('Error connecting to backend: ' + err.message)
     } finally {
       setIsLoading(false)
     }
@@ -130,6 +226,9 @@ export default function ConversationScreen() {
 
   const handlePhraseSelect = (text) => {
     setDisplayedSentence(text)
+    // Add User to History
+    setConversationHistory(prev => [...prev, { role: 'user', content: text }])
+
     setTimeout(() => setMode('LISTEN'), AUTO_SWITCH_DELAY)
   }
 
@@ -146,35 +245,6 @@ export default function ConversationScreen() {
 
 
       <View style={styles.topZone}>
-
-
-        <View style={styles.topControls}>
-          <Pressable
-            style={[
-              styles.smallButton,
-              isListenMode ? styles.enabledButton : styles.disabledButton,
-            ]}
-            disabled={!isListenMode}
-            onPress={handleAcknowledge}
-          >
-            <Text style={[styles.smallButtonText, styles.rotated]}>
-              OK
-            </Text>
-          </Pressable>
-
-          <Pressable
-            style={[
-              styles.smallButton,
-              isListenMode ? styles.repeatButton : styles.disabledButton,
-            ]}
-            disabled={!isListenMode}
-            onPress={handleRepeat}
-          >
-            <Text style={styles.smallButtonText}>🔁</Text>
-          </Pressable>
-        </View>
-
-
         <View style={styles.topDisplayArea}>
           {isSpeakMode && (
             <View style={[styles.textBox, styles.rotated]}>
@@ -197,55 +267,6 @@ export default function ConversationScreen() {
 
         {/* PHRASE AREA (LOCKED HEIGHT) */}
         <View style={styles.phraseArea}>
-          {isSpeakMode && (
-            <View style={styles.phraseGrid}>
-              {/* Generated Suggestions */}
-              {suggestions.length > 0 ? (
-                suggestions.map((sug, idx) => (
-                  <Pressable
-                    key={idx}
-                    style={[styles.phraseButton, styles.suggestionButton]}
-                    onPress={() => handlePhraseSelect(sug)}
-                  >
-                    <Text style={styles.phraseText}>{sug}</Text>
-                  </Pressable>
-                ))
-              ) : (
-                <>
-                  {/* Default Phrases */}
-                  <Pressable
-                    style={styles.phraseButton}
-                    onPress={() => handlePhraseSelect('I need help')}
-                  >
-                    <Text style={styles.phraseIcon}>🆘</Text>
-                    <Text style={styles.phraseText}>I need help</Text>
-                  </Pressable>
-                  <Pressable
-                    style={styles.phraseButton}
-                    onPress={() => handlePhraseSelect('Please wait')}
-                  >
-                    <Text style={styles.phraseIcon}>⏳</Text>
-                    <Text style={styles.phraseText}>Please wait</Text>
-                  </Pressable>
-                  <Pressable
-                    style={styles.phraseButton}
-                    onPress={() => handlePhraseSelect('Yes')}
-                  >
-                    <Text style={styles.phraseIcon}>✅</Text>
-                    <Text style={styles.phraseText}>Yes</Text>
-                  </Pressable>
-                  <Pressable
-                    style={styles.phraseButton}
-                    onPress={() => handlePhraseSelect('No')}
-                  >
-                    <Text style={styles.phraseIcon}>❌</Text>
-                    <Text style={styles.phraseText}>No</Text>
-                  </Pressable>
-                </>
-              )}
-            </View>
-          )}
-
           {/* Logic for Listen Mode Result */}
           {isListenMode && simplifiedText ? (
             <View style={styles.resultBox}>
@@ -260,30 +281,12 @@ export default function ConversationScreen() {
 
 
         <View style={styles.controls}>
-          {/* Record Button (Dynamic for both modes) */}
-          <Pressable
-            style={[
-              styles.controlButton,
-              isRecording ? styles.recording : styles.recordDefault
-            ]}
-            onPress={isRecording ? stopRecording : startRecording}
-          >
+          {/* Status Indicator instead of Button */}
+          <View style={[styles.controlButton, isRecording ? styles.recording : styles.recordDefault, { opacity: 0.8 }]}>
             <Text style={styles.controlText}>
-              {isRecording ? '⏹ Stop' : (isLoading ? '⏳...' : '🎤 Record')}
+              {isRecording ? (isSpeakMode ? '🎤 Listening...' : '👂 Listening...') : (isLoading ? '⏳ Processing...' : 'Waiting...')}
             </Text>
-          </Pressable>
-
-          <Pressable
-            style={[
-              styles.controlButton,
-              styles.aphasiaOk,
-              !isSpeakMode && styles.disabledButton,
-            ]}
-            disabled={!isSpeakMode}
-            onPress={handleAcknowledge}
-          >
-            <Text style={styles.controlText}>OK</Text>
-          </Pressable>
+          </View>
 
           <Pressable
             style={[styles.controlButton, styles.endButton]}
@@ -473,6 +476,20 @@ const styles = StyleSheet.create({
   clearButtonText: {
     color: '#007AFF',
     fontWeight: '600',
+  },
+  bestSuggestionButton: {
+    borderColor: '#007AFF',
+    borderWidth: 2,
+    backgroundColor: '#F0F8FF',
+  },
+  bestLabel: {
+    color: '#007AFF',
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  bestPhraseText: {
+    color: '#007AFF',
   },
 })
 
