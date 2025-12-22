@@ -92,29 +92,57 @@ app.post("/api/tts", async (req, res) => {
   }
 });
 
-// Example placeholder route for future audio-based express endpoint
+// Express mode: Audio -> Transcript -> Suggestions
 app.post("/api/express/audio", upload.single("audio"), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: "audio file is required" });
     }
-    // TODO:
-    // 1. Use Azure Speech STT on req.file.buffer to get transcript
-    // 2. Use getExpressSuggestions(transcript)
-    // For now, just echo a stub:
+
+    // 1. STT
+    const transcript = await transcribeAudioBuffer(req.file.buffer);
+    if (!transcript) {
+        return res.json({ transcript: "", suggestions: [] });
+    }
+
+    // 2. Processing
+    const suggestions = await getExpressSuggestions(transcript);
+    
     res.json({
-      transcript: "TODO: STT from audio",
-      suggestions: [
-        "Stub suggestion 1 from audio.",
-        "Stub suggestion 2 from audio.",
-        "Stub suggestion 3 from audio.",
-      ],
+      transcript,
+      suggestions,
     });
   } catch (err) {
     console.error("Error in /api/express/audio:", err.message || err);
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
+// Listen mode: Audio -> Transcript -> Simplified
+app.post("/api/listen/audio", upload.single("audio"), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "audio file is required" });
+      }
+  
+      // 1. STT
+      const transcript = await transcribeAudioBuffer(req.file.buffer);
+      if (!transcript) {
+          return res.json({ transcript: "", simplified: "" });
+      }
+  
+      // 2. Processing
+      const simplified = await simplifySpeech(transcript);
+      
+      res.json({
+        transcript,
+        simplified,
+      });
+    } catch (err) {
+      console.error("Error in /api/listen/audio:", err.message || err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
 
 // Global error handler (fallback)
 app.use((err, req, res, next) => {
