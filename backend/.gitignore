@@ -1,0 +1,6 @@
+﻿node_modules
+.env
+*.wav
+tmp_recording.wav
+debug.txt
+error.log
