@@ -193,12 +193,6 @@ export default function ConversationScreen() {
 
           // Optionally add simplified/best text to history? 
           // The user transcript is already added. Let's keep it clean.
-
-          // Auto-Switch to Listen Mode
-          setTimeout(() => {
-            console.log("Auto-switching to LISTEN...");
-            setMode('LISTEN');
-          }, AUTO_SWITCH_DELAY);
         }
       } else {
         // Listen Mode
@@ -206,11 +200,7 @@ export default function ConversationScreen() {
           setSimplifiedText(data.simplified)
           setConversationHistory(prev => [...prev, { role: 'partner', content: data.simplified }])
 
-          // Auto-Switch after reading time (e.g., 4 seconds)
-          setTimeout(() => {
-            console.log("Auto-switching to SPEAK...");
-            setMode('SPEAK');
-          }, 4000);
+          setConversationHistory(prev => [...prev, { role: 'partner', content: data.simplified }])
         }
       }
 
@@ -219,6 +209,11 @@ export default function ConversationScreen() {
       alert('Error connecting to backend: ' + err.message)
     } finally {
       setIsLoading(false)
+      // Resume recording if not already started (by manual switch)
+      if (!isRecordingRef.current) {
+        console.log("Resuming recording...");
+        startRecording();
+      }
     }
   }
 
@@ -245,6 +240,15 @@ export default function ConversationScreen() {
 
 
       <View style={styles.topZone}>
+        <View style={[styles.topControls, styles.rotated]}>
+          <Pressable onPress={handleRepeat} style={[styles.smallButton, styles.repeatButton]}>
+            <Text style={styles.smallButtonText}>Repeat</Text>
+          </Pressable>
+          <Pressable onPress={handleAcknowledge} style={[styles.smallButton, styles.aphasiaOk]}>
+            <Text style={styles.smallButtonText}>Okay</Text>
+          </Pressable>
+        </View>
+
         <View style={styles.topDisplayArea}>
           {isSpeakMode && (
             <View style={[styles.textBox, styles.rotated]}>
@@ -265,7 +269,6 @@ export default function ConversationScreen() {
 
       <View style={styles.bottomZone}>
 
-        {/* PHRASE AREA (LOCKED HEIGHT) */}
         <View style={styles.phraseArea}>
           {/* Logic for Listen Mode Result */}
           {isListenMode && simplifiedText ? (
@@ -277,6 +280,15 @@ export default function ConversationScreen() {
               </Pressable>
             </View>
           ) : null}
+        </View>
+
+        <View style={styles.midControls}>
+          <Pressable onPress={handleRepeat} style={[styles.smallButton, styles.repeatButton]}>
+            <Text style={styles.smallButtonText}>Repeat</Text>
+          </Pressable>
+          <Pressable onPress={handleAcknowledge} style={[styles.smallButton, styles.aphasiaOk]}>
+            <Text style={styles.smallButtonText}>Okay</Text>
+          </Pressable>
         </View>
 
 
@@ -490,6 +502,12 @@ const styles = StyleSheet.create({
   },
   bestPhraseText: {
     color: '#007AFF',
+  },
+  midControls: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 20,
+    gap: 12,
   },
 })
 
