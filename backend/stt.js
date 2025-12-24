@@ -13,6 +13,18 @@ if (!fs.existsSync(TMP_DIR)) {
     fs.mkdirSync(TMP_DIR);
 }
 
+// Explicitly set FFmpeg path since it's not in System PATH for this process
+const ffmpegPath = "C:\\ffmpeg\\ffmpeg.exe";
+if (fs.existsSync(ffmpegPath)) {
+    ffmpeg.setFfmpegPath(ffmpegPath);
+} else {
+    // Fallback or try standard bin path if user moved it
+    const binPath = "C:\\ffmpeg\\bin\\ffmpeg.exe";
+    if (fs.existsSync(binPath)) {
+        ffmpeg.setFfmpegPath(binPath);
+    }
+}
+
 function createSpeechConfig() {
     if (!AZURE_SPEECH_KEY || !AZURE_SPEECH_REGION) {
         throw new Error("Missing AZURE_SPEECH_KEY or AZURE_SPEECH_REGION");

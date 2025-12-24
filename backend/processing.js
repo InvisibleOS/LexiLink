@@ -105,16 +105,19 @@ Your job:
 async function simplifySpeech(inputText) {
     const prompt = `
 You are helping a person with aphasia understand spoken language. The input might be fast, complex, or long.
-
+Your job is to simplify the text for a person with aphasia.
 Original speech:
 "${inputText}"
 
-Your job:
-1. Break down the text into simple, clear concepts.
-2. Rewrite it using basic, everyday vocabulary.
-3. If the original text is long, split it into short, digestible sentences (maximum 2-3 short sentences).
-4. Remove unnecessary jargon or fluff. Focus on the core message.
-5. Return ONLY the simplified text.
+Rules:
+1. Use simple, everyday words.
+2. Keep sentences short and clear.
+3. Use a maximum of 2 OR3 short sentences.
+4. Do NOT add new information.
+5. Do NOT change the original meaning.
+6. Remove extra or unnecessary words.
+7. Do NOT explain your changes.
+8. Return ONLY the simplified text.
 `;
 
     try {

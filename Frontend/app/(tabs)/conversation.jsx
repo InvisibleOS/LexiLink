@@ -246,19 +246,18 @@ export default function ConversationScreen() {
 
       <View style={styles.topZone}>
         <View style={styles.topDisplayArea}>
-          {isSpeakMode && (
-            <View style={[styles.textBox, styles.rotated]}>
+          <View style={styles.topDisplayArea}>
+            {/* Persistent Rotated Display for Partner */}
+            <View style={[styles.textBox, styles.rotated, { width: '100%', alignItems: 'center' }]}>
               <Text style={styles.displayText}>
-                {displayedSentence || ' '}
+                {/* Show User Text (Speak Mode) OR Simplified Text (Listen Mode) */}
+                {isListenMode
+                  ? (simplifiedText || "Listening to partner...")
+                  : (displayedSentence || "Select a phrase...")
+                }
               </Text>
             </View>
-          )}
-
-          {isListenMode && (
-            <View style={[styles.turnCue, styles.rotated]}>
-              <Text style={styles.turnCueText}>Your turn to speak</Text>
-            </View>
-          )}
+          </View>
         </View>
       </View>
 
@@ -267,7 +266,27 @@ export default function ConversationScreen() {
 
         {/* PHRASE AREA (LOCKED HEIGHT) */}
         <View style={styles.phraseArea}>
-          {/* Logic for Listen Mode Result */}
+          {isSpeakMode && (
+            <View style={styles.phraseGrid}>
+              <Pressable style={styles.phraseButton} onPress={() => handlePhraseSelect("I need help")}>
+                <Text style={styles.phraseIcon}>🆘</Text>
+                <Text style={styles.phraseText}>I need help</Text>
+              </Pressable>
+              <Pressable style={styles.phraseButton} onPress={() => handlePhraseSelect("Please wait")}>
+                <Text style={styles.phraseIcon}>✋</Text>
+                <Text style={styles.phraseText}>Please wait</Text>
+              </Pressable>
+              <Pressable style={[styles.phraseButton, { backgroundColor: '#E2F0D9' }]} onPress={() => handlePhraseSelect("Yes")}>
+                <Text style={styles.phraseIcon}>✅</Text>
+                <Text style={styles.phraseText}>Yes</Text>
+              </Pressable>
+              <Pressable style={[styles.phraseButton, { backgroundColor: '#FADBD8' }]} onPress={() => handlePhraseSelect("No")}>
+                <Text style={styles.phraseIcon}>❌</Text>
+                <Text style={styles.phraseText}>No</Text>
+              </Pressable>
+            </View>
+          )}
+
           {isListenMode && simplifiedText ? (
             <View style={styles.resultBox}>
               <Text style={styles.resultLabel}>Simplified Meaning:</Text>
@@ -279,20 +298,35 @@ export default function ConversationScreen() {
           ) : null}
         </View>
 
-
         <View style={styles.controls}>
-          {/* Status Indicator instead of Button */}
-          <View style={[styles.controlButton, isRecording ? styles.recording : styles.recordDefault, { opacity: 0.8 }]}>
+          {/* Status Indicator moved above buttons */}
+          <View style={[styles.controlButton, isRecording ? styles.recording : styles.recordDefault, { opacity: 0.9, marginBottom: 20 }]}>
             <Text style={styles.controlText}>
               {isRecording ? (isSpeakMode ? '🎤 Listening...' : '👂 Listening...') : (isLoading ? '⏳ Processing...' : 'Waiting...')}
             </Text>
           </View>
+        </View>
+
+        <View style={styles.midControls}>
+          <Pressable
+            onPress={isListenMode ? null : handleRepeat}
+            style={[styles.smallButton, styles.repeatButton, isListenMode && styles.disabledButton]}
+          >
+            <Text style={styles.smallButtonText}>Repeat</Text>
+          </Pressable>
 
           <Pressable
-            style={[styles.controlButton, styles.endButton]}
+            onPress={isListenMode ? null : handleAcknowledge}
+            style={[styles.smallButton, styles.aphasiaOk, isListenMode && styles.disabledButton]}
+          >
+            <Text style={styles.smallButtonText}>Okay</Text>
+          </Pressable>
+
+          <Pressable
+            style={[styles.smallButton, styles.endButton]}
             onPress={() => router.replace('/')}
           >
-            <Text style={styles.controlText}>❌ End</Text>
+            <Text style={styles.smallButtonText}>End</Text>
           </Pressable>
         </View>
       </View>
@@ -325,15 +359,18 @@ const styles = StyleSheet.create({
 
 
   smallButton: {
-    paddingVertical: 14,
-    paddingHorizontal: 32,
+    paddingVertical: 24, // Increased from 14
+    paddingHorizontal: 20,
     borderRadius: 22,
+    flex: 1, // Ensure they take available space in row
+    alignItems: 'center',
+    marginHorizontal: 4,
   },
 
   smallButtonText: {
     color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 24, // Increased from 18
+    fontWeight: '800',
   },
 
   enabledButton: {
@@ -346,6 +383,7 @@ const styles = StyleSheet.create({
 
   disabledButton: {
     backgroundColor: '#BFC8C8',
+    opacity: 0.5,
   },
 
   rotated: {
@@ -418,14 +456,17 @@ const styles = StyleSheet.create({
   },
 
   controls: {
-    flexDirection: 'row',
-    gap: 12,
+    // Was row, now column for stacking status above buttons? 
+    // Actually the JSX structure change handles the vertical stacking (controls View above midControls View)
+    // But we need to make sure 'controls' (Status) is full width 
+    width: '100%',
+    alignItems: 'center',
   },
 
   controlButton: {
-    flex: 1,
+    width: '100%', // Full width status bar
     borderRadius: 24,
-    paddingVertical: 22,
+    paddingVertical: 18,
     alignItems: 'center',
   },
 
@@ -439,7 +480,7 @@ const styles = StyleSheet.create({
 
   controlText: {
     color: '#FFFFFF',
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
   },
   suggestionButton: {
@@ -490,6 +531,12 @@ const styles = StyleSheet.create({
   },
   bestPhraseText: {
     color: '#007AFF',
+  },
+  midControls: {
+    flexDirection: 'row',
+    justifyContent: 'space-between', // Spread them out
+    marginBottom: 10,
+    gap: 8, // Smaller gap to fit 3 buttons
   },
 })
 
