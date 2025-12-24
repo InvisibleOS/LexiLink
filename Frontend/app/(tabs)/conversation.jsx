@@ -383,7 +383,7 @@ const styles = StyleSheet.create({
 
   disabledButton: {
     backgroundColor: '#BFC8C8',
-    opacity: 0.5,
+    opacity: 0.3, // More translucent as requested
   },
 
   rotated: {
