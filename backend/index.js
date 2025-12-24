@@ -82,11 +82,13 @@ app.post("/api/tts", async (req, res) => {
       return res.status(400).json({ error: "text is required" });
     }
 
-    // TODO: Integrate Azure Speech TTS and return audio or URL
-    res.json({
-      text,
-      note: "TTS not implemented yet – this will later return audio bytes or a URL.",
-    });
+    console.log("Synthesizing TTS for:", text);
+    const audioData = await synthesizeTextToAudio(text);
+
+    // Return as MP3 audio
+    res.set("Content-Type", "audio/mpeg");
+    res.send(Buffer.from(audioData));
+
   } catch (err) {
     console.error("Error in /api/tts:", err.message || err);
     res.status(500).json({ error: "Internal server error" });

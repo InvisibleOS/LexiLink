@@ -71,6 +71,18 @@ export default function ConversationScreen() {
     }, [startMode])
   )
 
+  // Cleanup on Unmount
+  React.useEffect(() => {
+    return () => {
+      console.log("Unmounting Conversation... Stopping recording.");
+      // We can't access 'recording' state reliably directly in return if closure is stale,
+      // but we can use a ref or just ensure logic is robust.
+      // Best to rely on isRecordingRef to stop loops, and attempt unload if possible.
+      // Note: Expo Audio usually handles unloading on app background, but valid to try here.
+      isRecordingRef.current = false;
+    };
+  }, []);
+
   // --- Audio Handlers ---
   const startRecording = async () => {
     try {
@@ -190,6 +202,7 @@ export default function ConversationScreen() {
         if (data.bestSuggestion) {
           console.log("Auto-selecting Best Suggestion:", data.bestSuggestion);
           setDisplayedSentence(data.bestSuggestion);
+          playTTS(data.bestSuggestion); // Auto-play
 
           // Optionally add simplified/best text to history? 
           // The user transcript is already added. Let's keep it clean.
@@ -205,6 +218,7 @@ export default function ConversationScreen() {
         if (data.simplified) {
           setSimplifiedText(data.simplified)
           setConversationHistory(prev => [...prev, { role: 'partner', content: data.simplified }])
+          playTTS(data.simplified); // Auto-play
 
           // Auto-Switch after reading time (e.g., 4 seconds)
           setTimeout(() => {
@@ -226,6 +240,7 @@ export default function ConversationScreen() {
 
   const handlePhraseSelect = (text) => {
     setDisplayedSentence(text)
+    playTTS(text); // Auto-play
     // Add User to History
     setConversationHistory(prev => [...prev, { role: 'user', content: text }])
 
@@ -236,7 +251,39 @@ export default function ConversationScreen() {
     setMode((prev) => (prev === 'SPEAK' ? 'LISTEN' : 'SPEAK'))
   }
 
-  const handleRepeat = () => { }
+  const handleRepeat = () => {
+    // Re-play TTS of current text if available
+    if (isListenMode && simplifiedText) {
+      playTTS(simplifiedText);
+    } else if (isSpeakMode && displayedSentence) {
+      playTTS(displayedSentence);
+    }
+  }
+
+  const playTTS = async (text) => {
+    if (!text) return;
+    try {
+      console.log("Requesting TTS for:", text);
+      const response = await fetch(`${BACKEND_URL}/api/tts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+
+      if (!response.ok) throw new Error("TTS Failed");
+
+      const blob = await response.blob();
+      const reader = new FileReader();
+      reader.readAsDataURL(blob);
+      reader.onloadend = async () => {
+        const uri = reader.result;
+        const { sound } = await Audio.Sound.createAsync({ uri });
+        await sound.playAsync();
+      };
+    } catch (err) {
+      console.error("TTS Error:", err);
+    }
+  };
 
   const backgroundColor = isSpeakMode ? '#D6E4F0' : '#DCEFE3'
 
@@ -338,7 +385,19 @@ export default function ConversationScreen() {
 
           <Pressable
             style={[styles.smallButton, styles.endButton]}
-            onPress={() => router.replace('/')}
+            onPress={async () => {
+              // Stop Recording explicitly
+              if (recording) {
+                try {
+                  await recording.stopAndUnloadAsync();
+                } catch (e) {
+                  console.log("Error stopping on End:", e);
+                }
+              }
+              setIsRecording(false);
+              isRecordingRef.current = false;
+              router.replace('/');
+            }}
           >
             <Text style={styles.smallButtonText}>End</Text>
           </Pressable>
