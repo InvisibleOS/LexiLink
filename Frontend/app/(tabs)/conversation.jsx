@@ -206,11 +206,11 @@ export default function ConversationScreen() {
           setSimplifiedText(data.simplified)
           setConversationHistory(prev => [...prev, { role: 'partner', content: data.simplified }])
 
-          // Auto-Switch after reading time (e.g., 4 seconds)
+          // Auto-Switch to Speak Mode
           setTimeout(() => {
             console.log("Auto-switching to SPEAK...");
             setMode('SPEAK');
-          }, 4000);
+          }, AUTO_SWITCH_DELAY);
         }
       }
 
