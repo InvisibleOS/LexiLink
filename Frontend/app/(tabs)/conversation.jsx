@@ -220,11 +220,11 @@ export default function ConversationScreen() {
           setConversationHistory(prev => [...prev, { role: 'partner', content: data.simplified }])
           playTTS(data.simplified); // Auto-play
 
-          // Auto-Switch after reading time (e.g., 4 seconds)
+          // Auto-Switch to Speak Mode
           setTimeout(() => {
             console.log("Auto-switching to SPEAK...");
             setMode('SPEAK');
-          }, 4000);
+          }, AUTO_SWITCH_DELAY);
         }
       }
 
