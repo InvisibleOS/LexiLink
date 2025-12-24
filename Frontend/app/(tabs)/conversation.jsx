@@ -97,7 +97,17 @@ export default function ConversationScreen() {
       setRecording(newRecording)
       setIsRecording(true)
       isRecordingRef.current = true;
+      setRecording(newRecording)
+      setIsRecording(true)
+      isRecordingRef.current = true;
       lastAudioDetected.current = Date.now();
+
+      // Clear text when STARTING to record for the NEW mode
+      if (isSpeakMode) {
+        setDisplayedSentence(''); // Clear user text when user starts speaking
+      } else {
+        setSimplifiedText(''); // Clear partner text when partner starts speaking
+      }
 
       // VAD Monitoring
       newRecording.setOnRecordingStatusUpdate((status) => {
@@ -184,15 +194,17 @@ export default function ConversationScreen() {
         if (data.transcript) {
           // REMOVED onscreen display per user request
           console.log("TRANSCRIPT:", data.transcript);
-          setConversationHistory(prev => [...prev, { role: 'user', content: data.transcript }]);
+          // Don't add to history yet, wait for selection
+          // setConversationHistory(prev => [...prev, { role: 'user', content: data.transcript }]);
+        }
+
+        if (data.suggestions) {
+          setSuggestions(data.suggestions);
         }
 
         if (data.bestSuggestion) {
           console.log("Auto-selecting Best Suggestion:", data.bestSuggestion);
           setDisplayedSentence(data.bestSuggestion);
-
-          // Optionally add simplified/best text to history? 
-          // The user transcript is already added. Let's keep it clean.
 
           // Auto-Switch to Listen Mode
           setTimeout(() => {
@@ -206,11 +218,11 @@ export default function ConversationScreen() {
           setSimplifiedText(data.simplified)
           setConversationHistory(prev => [...prev, { role: 'partner', content: data.simplified }])
 
-          // Auto-Switch after reading time (e.g., 4 seconds)
+          // Auto-Switch to Speak Mode
           setTimeout(() => {
             console.log("Auto-switching to SPEAK...");
             setMode('SPEAK');
-          }, 4000);
+          }, AUTO_SWITCH_DELAY);
         }
       }
 
@@ -246,19 +258,11 @@ export default function ConversationScreen() {
 
       <View style={styles.topZone}>
         <View style={styles.topDisplayArea}>
-          {isSpeakMode && (
-            <View style={[styles.textBox, styles.rotated]}>
-              <Text style={styles.displayText}>
-                {displayedSentence || ' '}
-              </Text>
-            </View>
-          )}
-
-          {isListenMode && (
-            <View style={[styles.turnCue, styles.rotated]}>
-              <Text style={styles.turnCueText}>Your turn to speak</Text>
-            </View>
-          )}
+          <View style={[styles.textBox, styles.rotated, !displayedSentence && { opacity: 0 }]}>
+            <Text style={styles.displayText}>
+              {displayedSentence || ' '}
+            </Text>
+          </View>
         </View>
       </View>
 
@@ -268,15 +272,21 @@ export default function ConversationScreen() {
         {/* PHRASE AREA (LOCKED HEIGHT) */}
         <View style={styles.phraseArea}>
           {/* Logic for Listen Mode Result */}
-          {isListenMode && simplifiedText ? (
+          {simplifiedText ? (
             <View style={styles.resultBox}>
               <Text style={styles.resultLabel}>Simplified Meaning:</Text>
               <Text style={styles.resultText}>{simplifiedText}</Text>
-              <Pressable onPress={() => setSimplifiedText('')} style={styles.clearButton}>
-                <Text style={styles.clearButtonText}>Clear</Text>
-              </Pressable>
             </View>
           ) : null}
+
+          {/* Logic for Speak Mode Suggestions - HIDDEN per user request */
+          /* 
+          {isSpeakMode && suggestions.length > 0 && (
+            <View style={styles.phraseGrid}>
+              ...
+            </View>
+          )} 
+          */}
         </View>
 
 
