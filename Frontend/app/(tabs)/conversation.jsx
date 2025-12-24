@@ -59,14 +59,25 @@ export default function ConversationScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      // If startMode is provided, sync state
       if (startMode === 'SPEAK' || startMode === 'LISTEN') {
         setMode(startMode)
+        // If mode is already same, useEffect[mode] won't trigger re-start.
+        // So we explicitly trigger start logic here if needed.
+        // Or better: Stop any previous, then start fresh.
+        console.log("Focusing Conversation. Mode:", startMode);
+
+        // Reset data
         setDisplayedSentence('')
         setSuggestions([])
         setBestSuggestion(null)
         setSimplifiedText('')
-        // Optionally reset history?? No, context is good to keep. 
-        // setConversationHistory([]) 
+
+        // Force restart recording
+        // Small timeout to allow any previous cleanup or mode setState to process
+        setTimeout(() => {
+          startRecording();
+        }, 600);
       }
     }, [startMode])
   )
