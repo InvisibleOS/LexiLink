@@ -245,18 +245,32 @@ export default function ConversationScreen() {
 
 
       <View style={styles.topZone}>
+        {/* Top Controls (Repeat/Okay) */}
+        <View style={[styles.topControls, styles.rotated]}>
+          <Pressable
+            onPress={isSpeakMode ? null : handleRepeat}
+            style={[styles.smallButton, styles.repeatButton, isSpeakMode && styles.disabledButton]}
+          >
+            <Text style={styles.smallButtonText}>Repeat</Text>
+          </Pressable>
+          <Pressable
+            onPress={isSpeakMode ? null : handleAcknowledge}
+            style={[styles.smallButton, styles.aphasiaOk, isSpeakMode && styles.disabledButton]}
+          >
+            <Text style={styles.smallButtonText}>Okay</Text>
+          </Pressable>
+        </View>
+
         <View style={styles.topDisplayArea}>
-          <View style={styles.topDisplayArea}>
-            {/* Persistent Rotated Display for Partner */}
-            <View style={[styles.textBox, styles.rotated, { width: '100%', alignItems: 'center' }]}>
-              <Text style={styles.displayText}>
-                {/* Show User Text (Speak Mode) OR Simplified Text (Listen Mode) */}
-                {isListenMode
-                  ? (simplifiedText || "Listening to partner...")
-                  : (displayedSentence || "Select a phrase...")
-                }
-              </Text>
-            </View>
+          {/* Persistent Rotated Display for Partner */}
+          <View style={[styles.textBox, styles.rotated, { width: '100%', alignItems: 'center', opacity: 1 }]}>
+            <Text style={styles.displayText}>
+              {/* Show User Text (Speak Mode) OR Simplified Text (Listen Mode) */}
+              {isListenMode
+                ? (simplifiedText || "Listening to partner...")
+                : (displayedSentence || "Select a phrase...")
+              }
+            </Text>
           </View>
         </View>
       </View>
@@ -331,7 +345,7 @@ export default function ConversationScreen() {
         </View>
       </View>
 
-    </SafeAreaView>
+    </SafeAreaView >
   )
 }
 
