@@ -213,7 +213,7 @@ export default function ConversationScreen() {
         if (data.bestSuggestion) {
           console.log("Auto-selecting Best Suggestion:", data.bestSuggestion);
           setDisplayedSentence(data.bestSuggestion);
-          playTTS(data.bestSuggestion); // Auto-play
+          await playTTS(data.bestSuggestion, false); // Auto-play (Normal)
 
           // Optionally add simplified/best text to history? 
           // The user transcript is already added. Let's keep it clean.
@@ -229,7 +229,7 @@ export default function ConversationScreen() {
         if (data.simplified) {
           setSimplifiedText(data.simplified)
           setConversationHistory(prev => [...prev, { role: 'partner', content: data.simplified }])
-          playTTS(data.simplified); // Auto-play
+          await playTTS(data.simplified, true); // Auto-play (Slow)
 
           // Auto-Switch to Speak Mode
           setTimeout(() => {
@@ -249,9 +249,9 @@ export default function ConversationScreen() {
 
 
 
-  const handlePhraseSelect = (text) => {
+  const handlePhraseSelect = async (text) => {
     setDisplayedSentence(text)
-    playTTS(text); // Auto-play
+    await playTTS(text, false); // Auto-play (Normal)
     // Add User to History
     setConversationHistory(prev => [...prev, { role: 'user', content: text }])
 
@@ -262,38 +262,52 @@ export default function ConversationScreen() {
     setMode((prev) => (prev === 'SPEAK' ? 'LISTEN' : 'SPEAK'))
   }
 
-  const handleRepeat = () => {
+  const handleRepeat = async () => {
     // Re-play TTS of current text if available
+    // And also switch mode after delay (User Request)
     if (isListenMode && simplifiedText) {
-      playTTS(simplifiedText);
+      await playTTS(simplifiedText, true); // Slow for Listen Mode
+      setTimeout(() => setMode('SPEAK'), AUTO_SWITCH_DELAY);
     } else if (isSpeakMode && displayedSentence) {
-      playTTS(displayedSentence);
+      await playTTS(displayedSentence, false); // Normal for Speak Mode
+      setTimeout(() => setMode('LISTEN'), AUTO_SWITCH_DELAY);
     }
   }
 
-  const playTTS = async (text) => {
-    if (!text) return;
-    try {
-      console.log("Requesting TTS for:", text);
-      const response = await fetch(`${BACKEND_URL}/api/tts`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
-      });
+  const playTTS = (text, isSlow = false) => {
+    if (!text) return Promise.resolve();
+    return new Promise(async (resolve) => {
+      try {
+        console.log(`Requesting TTS for: "${text}" (Slow: ${isSlow})`);
+        const response = await fetch(`${BACKEND_URL}/api/tts`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, slow: isSlow }),
+        });
 
-      if (!response.ok) throw new Error("TTS Failed");
+        if (!response.ok) throw new Error("TTS Failed");
 
-      const blob = await response.blob();
-      const reader = new FileReader();
-      reader.readAsDataURL(blob);
-      reader.onloadend = async () => {
-        const uri = reader.result;
-        const { sound } = await Audio.Sound.createAsync({ uri });
-        await sound.playAsync();
-      };
-    } catch (err) {
-      console.error("TTS Error:", err);
-    }
+        const blob = await response.blob();
+        const reader = new FileReader();
+        reader.readAsDataURL(blob);
+        reader.onloadend = async () => {
+          const uri = reader.result;
+          const { sound } = await Audio.Sound.createAsync({ uri });
+
+          sound.setOnPlaybackStatusUpdate(async (status) => {
+            if (status.didJustFinish) {
+              await sound.unloadAsync();
+              resolve();
+            }
+          });
+
+          await sound.playAsync();
+        };
+      } catch (err) {
+        console.error("TTS Error:", err);
+        resolve(); // Resolve anyway
+      }
+    });
   };
 
   const backgroundColor = isSpeakMode ? '#D6E4F0' : '#DCEFE3'
@@ -381,8 +395,8 @@ export default function ConversationScreen() {
 
         <View style={styles.midControls}>
           <Pressable
-            onPress={isListenMode ? null : handleRepeat}
-            style={[styles.smallButton, styles.repeatButton, isListenMode && styles.disabledButton]}
+            onPress={handleRepeat}
+            style={[styles.smallButton, styles.repeatButton]}
           >
             <Text style={styles.smallButtonText}>Repeat</Text>
           </Pressable>
