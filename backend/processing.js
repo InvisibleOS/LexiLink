@@ -112,9 +112,9 @@ Original speech:
 Rules:
 1. Use simple, everyday words.
 2. Keep sentences short and clear.
-3. Use a maximum of 2 OR3 short sentences.
+3. Use a maximum of 2 OR 3 short sentences.
 4. Do NOT add new information.
-5. Do NOT change the original meaning.
+5. Reduce size of sentence while keeping original meaning.
 6. Remove extra or unnecessary words.
 7. Do NOT explain your changes.
 8. Return ONLY the simplified text.

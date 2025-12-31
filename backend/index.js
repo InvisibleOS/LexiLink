@@ -77,13 +77,13 @@ app.post("/api/listen", async (req, res) => {
  */
 app.post("/api/tts", async (req, res) => {
   try {
-    const { text } = req.body || {};
+    const { text, slow } = req.body || {};
     if (!text || !text.trim()) {
       return res.status(400).json({ error: "text is required" });
     }
 
-    console.log("Synthesizing TTS for:", text);
-    const audioData = await synthesizeTextToAudio(text);
+    console.log(`Synthesizing TTS for: "${text}" (Slow: ${!!slow})`);
+    const audioData = await synthesizeTextToAudio(text, !!slow);
 
     // Return as MP3 audio
     res.set("Content-Type", "audio/mpeg");

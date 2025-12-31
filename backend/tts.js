@@ -21,15 +21,40 @@ function getSpeechConfig() {
 }
 
 // TODO: helper to synthesize text to audio (e.g., to a stream or base64)
-async function synthesizeTextToAudio(text) {
+// TODO: helper to synthesize text to audio (e.g., to a stream or base64)
+async function synthesizeTextToAudio(text, slow = false) {
     const speechConfig = getSpeechConfig();
 
     // null audio config means synthesize to memory (no playback on server)
     const synthesizer = new sdk.SpeechSynthesizer(speechConfig, null);
 
+    // Construct SSML for optional slow speed
+    // User requested 0.75 rate with GAPS between words for clarity
+    let rate = "1.0";
+    let textToSpeak = text;
+
+    if (slow) {
+        rate = "0.75";
+        // Inject pauses between words: replace spaces with a break
+        // Check for non-empty text to avoid errors
+        if (text) {
+            textToSpeak = text.split(' ').join(' <break time="150ms"/> ');
+        }
+    }
+
+    const ssml = `
+    <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">
+        <voice name="en-US-AvaMultilingualNeural">
+            <prosody rate="${rate}">
+                ${textToSpeak}
+            </prosody>
+        </voice>
+    </speak>`;
+
     return new Promise((resolve, reject) => {
-        synthesizer.speakTextAsync(
-            text,
+        // Use speakSsmlAsync instead of speakTextAsync
+        synthesizer.speakSsmlAsync(
+            ssml,
             (result) => {
                 if (result.reason === sdk.ResultReason.SynthesizingAudioCompleted) {
                     // result.audioData is an ArrayBuffer
