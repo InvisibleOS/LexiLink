@@ -45,6 +45,11 @@ export default function ConversationScreen() {
   const isSpeakMode = mode === 'SPEAK'
   const isListenMode = mode === 'LISTEN'
 
+  const modeRef = React.useRef(mode);
+  React.useEffect(() => {
+    modeRef.current = mode;
+  }, [mode]);
+
   // Auto-Start Handling when mode changes
   React.useEffect(() => {
     // Small delay to ensure cleanup of previous mode
@@ -62,6 +67,7 @@ export default function ConversationScreen() {
       // If startMode is provided, sync state
       if (startMode === 'SPEAK' || startMode === 'LISTEN') {
         setMode(startMode)
+        modeRef.current = startMode; // Sync ref immediately
         // If mode is already same, useEffect[mode] won't trigger re-start.
         // So we explicitly trigger start logic here if needed.
         // Or better: Stop any previous, then start fresh.
@@ -186,8 +192,11 @@ export default function ConversationScreen() {
       // Send History
       formData.append('history', JSON.stringify(conversationHistory))
 
-      const endpoint = isSpeakMode ? '/api/express/audio' : '/api/listen/audio'
-      console.log('Uploading to:', BACKEND_URL + endpoint)
+      // USE REF for determining current mode logic
+      // This prevents stale closure issues when simple `isSpeakMode` is captured from old render
+      const currentMode = modeRef.current;
+      const endpoint = currentMode === 'SPEAK' ? '/api/express/audio' : '/api/listen/audio'
+      console.log(`Processing Audio for Mode: ${currentMode} -> ${endpoint}`)
 
       const response = await fetch(`${BACKEND_URL}${endpoint}`, {
         method: 'POST',
@@ -202,7 +211,7 @@ export default function ConversationScreen() {
       const data = await response.json()
       console.log('Backend response:', data)
 
-      if (isSpeakMode) {
+      if (currentMode === 'SPEAK') {
         // Show context
         if (data.transcript) {
           // REMOVED onscreen display per user request
@@ -265,10 +274,13 @@ export default function ConversationScreen() {
   const handleRepeat = async () => {
     // Re-play TTS of current text if available
     // And also switch mode after delay (User Request)
-    if (isListenMode && simplifiedText) {
+    // Use REF to catch latent state updates if any
+    const currentMode = modeRef.current;
+
+    if (currentMode === 'LISTEN' && simplifiedText) {
       await playTTS(simplifiedText, true); // Slow for Listen Mode
       setTimeout(() => setMode('SPEAK'), AUTO_SWITCH_DELAY);
-    } else if (isSpeakMode && displayedSentence) {
+    } else if (currentMode === 'SPEAK' && displayedSentence) {
       await playTTS(displayedSentence, false); // Normal for Speak Mode
       setTimeout(() => setMode('LISTEN'), AUTO_SWITCH_DELAY);
     }
