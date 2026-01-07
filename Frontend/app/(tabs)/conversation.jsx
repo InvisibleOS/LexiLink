@@ -405,6 +405,51 @@ export default function ConversationScreen() {
             </View>
           ) : null}
 
+          {/* Moved Buttons Outside ResultBox for Logic/Accessibility */}
+          {isListenMode && (
+            <View style={{ marginTop: 20 }}>
+              <Pressable
+                disabled={!simplifiedText}
+                onPress={async () => {
+                  // Logic to call Simplify More
+                  try {
+                    const res = await fetch(`${BACKEND_URL}/api/listen/simplify-more`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ text: simplifiedText })
+                    });
+                    const data = await res.json();
+                    if (data.simplified) {
+                      setSimplifiedText(data.simplified);
+                      // Play TTS and WAIT for it to finish
+                      await playTTS(data.simplified, true);
+                      // THEN switch to Speak mode
+                      setMode('SPEAK');
+                    }
+                  } catch (e) {
+                    console.error("Simplify More Error", e);
+                  }
+                }}
+                style={({ pressed }) => [
+                  styles.smallButton,
+                  {
+                    backgroundColor: simplifiedText ? '#FFD700' : '#E0E0E0',
+                    paddingVertical: 18,
+                    borderRadius: 16,
+                    flexDirection: 'row',
+                    justifyContent: 'center',
+                    gap: 8,
+                    opacity: pressed ? 0.8 : 1,
+                    width: '100%'
+                  }
+                ]}
+              >
+                <Text style={{ fontSize: 24, opacity: simplifiedText ? 1 : 0.3 }}>✨</Text>
+                <Text style={[styles.smallButtonText, { fontSize: 18, color: simplifiedText ? '#000' : '#999' }]}>Simplify More</Text>
+              </Pressable>
+            </View>
+          )}
+
           {/* Logic for Speak Mode Suggestions - HIDDEN per user request */
           /* 
           {isSpeakMode && suggestions.length > 0 && (

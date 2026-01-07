@@ -141,8 +141,46 @@ Rules:
 }
 
 
+// Listen mode: Explain/Break down further
+async function simplifyMore(inputText) {
+    const prompt = `
+You are helping a person with aphasia. They need the absolute minimum words to understand.
+Convert the text into "Telegraph Usage" or "Broken Speech".
+Input Text: "${inputText}"
+Rules:
+1. Remove all articles (a, an, the).
+2. Remove auxiliary verbs if possible (am, is, are, will).
+3. Keep only KEY nouns and verbs.
+4. STRICTLY Maximum 2 or 3 words (e.g., "Dog happy", "Go store").
+5. Example: "What are you doing?" -> "What doing?"
+6. Example: "I am going to the store" -> "Go store"
+7. Return ONLY the simplified phrase. No bullet points.
+`;
+
+
+    try {
+        const content = await openAIChat(
+            [
+                { role: "system", content: "You simplify language to keywords only." },
+                { role: "user", content: prompt },
+            ],
+            {
+                temperature: 0.1,
+                max_tokens: 50,
+                mockResponse: inputText // Fallback
+            }
+        );
+
+        return content.trim();
+    } catch (error) {
+        console.error("Error in simplifyMore:", error.message);
+        return "Error explaining.";
+    }
+}
+
 module.exports = {
     getExpressSuggestions,
     simplifySpeech,
+    simplifyMore,
 };
 

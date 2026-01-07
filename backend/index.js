@@ -69,6 +69,33 @@ app.post("/api/listen", async (req, res) => {
   }
 });
 
+
+/**
+ * POST /api/listen/simplify-more
+ * Handlers further simplification requests.
+ * Expects JSON { text: string }
+ */
+app.post("/api/listen/simplify-more", async (req, res) => {
+  try {
+    const { text } = req.body || {};
+    if (!text || !text.trim()) {
+      return res.status(400).json({ error: "text is required" });
+    }
+
+    // Using the NEW simplifyMore logic
+    const { simplifyMore } = require("./processing");
+    const moreSimple = await simplifyMore(text);
+
+    res.json({
+      original: text,
+      simplified: moreSimple,
+    });
+  } catch (err) {
+    console.error("Error in /api/listen/simplify-more:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 /**
  * POST /api/tts
  * Text-to-speech: for now stubbed; later will call Azure Speech.
