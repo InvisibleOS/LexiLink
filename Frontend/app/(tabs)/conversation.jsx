@@ -14,7 +14,7 @@ import {
 } from 'expo-router'
 import { Audio } from 'expo-av'
 
-const BACKEND_URL = 'http://localhost:4000' // Update if needed
+const BACKEND_URL = 'http://10.68.7.111:4000' // Update if needed
 
 
 const AUTO_SWITCH_DELAY = 3000
@@ -39,8 +39,9 @@ export default function ConversationScreen() {
 
   // VAD State
   const lastAudioDetected = React.useRef(Date.now())
-  const SILENCE_THRESHOLD_DB = -45 // Adjustable
+  const SILENCE_THRESHOLD_DB = -60 // Even more sensitive
   const isRecordingRef = React.useRef(false); // To track in callbacks without stale closures
+  const webAudioRef = React.useRef(null); // Web VAD context
 
   const isSpeakMode = mode === 'SPEAK'
   const isListenMode = mode === 'LISTEN'
@@ -100,6 +101,107 @@ export default function ConversationScreen() {
     };
   }, []);
 
+  // --- Web Recording Implementation ---
+  const startWebRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const analyser = audioContext.createAnalyser();
+      const source = audioContext.createMediaStreamSource(stream);
+
+      analyser.fftSize = 256;
+      source.connect(analyser); // Connect stream to analyser
+      // Do NOT connect source to destination (speakers) to avoid feedback, 
+      // unless we want self-monitoring (usually no for voice dictation).
+
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
+      const mediaRecorder = new MediaRecorder(stream, { mimeType });
+      const chunks = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.push(e.data);
+      };
+
+      mediaRecorder.start();
+
+      let recordingUri = null;
+      let isRecordingWeb = true;
+      let onStatusUpdate = null;
+
+      // VAD / Metering Loop
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+
+      const updateMeter = () => {
+        if (!isRecordingWeb) return;
+
+        analyser.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          sum += dataArray[i];
+        }
+        const average = sum / bufferLength;
+        // Map 0-255 to dB-ish range for compatibility with existing logic (-160 to 0)
+        // Simple mapping: 20*log10(average/255)
+        // But our existing VAD logic uses the threshold directly.
+        // Let's normalize it to the Expo metering range if possible, or just pass the average 
+        // and adjust threshold? 
+        // Actually, the existing logic checks `status.metering > SILENCE_THRESHOLD_DB (-60)`.
+        // -60dB is very quiet. 
+        // Let's just pass a synthetic metering value.
+        // If average > 10 (which we used before), that's "Volume Detected".
+        // Let's pass -40 if average > 10, else -80.
+        // OR better: calculate dB.
+        // Gate the metering to prevent noise from keeping it open.
+        // Threshold 10/255 is approx -28dB relative to max, but noise floor might be lower.
+        // If avg > 10, we say "Speaking" (-40dB > -60dB threshold).
+        // If avg <= 10, we say "Silence" (-80dB < -60dB threshold).
+        const isSpeaking = average > 10;
+        const syntheticMetering = isSpeaking ? -40 : -80;
+
+        // Pass status update
+        if (onStatusUpdate) {
+          onStatusUpdate({
+            isRecording: true,
+            metering: syntheticMetering
+          });
+        }
+
+        requestAnimationFrame(updateMeter);
+      };
+
+      updateMeter();
+
+      return {
+        stopAndUnloadAsync: async () => {
+          isRecordingWeb = false;
+          return new Promise((resolve) => {
+            mediaRecorder.onstop = () => {
+              const blob = new Blob(chunks, { type: mimeType });
+              recordingUri = URL.createObjectURL(blob);
+
+              // Cleanup
+              stream.getTracks().forEach(t => t.stop());
+              audioContext.close();
+              resolve();
+            };
+            mediaRecorder.stop();
+          });
+        },
+        getURI: () => recordingUri,
+        setOnRecordingStatusUpdate: (fn) => {
+          onStatusUpdate = fn;
+        },
+        setProgressUpdateInterval: (interval) => {
+          // No-op or use for loop throttling if needed
+        }
+      };
+    } catch (err) {
+      console.error("Web Recording Error", err);
+      throw err;
+    }
+  }
+
   // --- Audio Handlers ---
   const startRecording = async () => {
     try {
@@ -108,20 +210,20 @@ export default function ConversationScreen() {
         try { await recording.stopAndUnloadAsync() } catch (e) { }
       }
 
-      const perm = await Audio.requestPermissionsAsync()
-      if (perm.status !== 'granted') {
-        // alert('Permission to access microphone is required!') // Silent fail prefer
-        return
+      let newRecording;
+
+      if (Platform.OS === 'web') {
+        newRecording = await startWebRecording();
+      } else {
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: true,
+          playsInSilentModeIOS: true,
+        })
+        const result = await Audio.Recording.createAsync(
+          { ...Audio.RecordingOptionsPresets.HIGH_QUALITY, isMeteringEnabled: true }
+        )
+        newRecording = result.recording;
       }
-
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      })
-
-      const { recording: newRecording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      )
 
       setRecording(newRecording)
       setIsRecording(true)
@@ -138,19 +240,30 @@ export default function ConversationScreen() {
         setSimplifiedText(''); // Clear partner text when partner starts speaking
       }
 
+      // Start Web VAD if needed - Removed, integrated above
+
       // VAD Monitoring
       newRecording.setOnRecordingStatusUpdate((status) => {
         if (!isRecordingRef.current) return;
 
-        if (status.metering > SILENCE_THRESHOLD_DB) {
+        // Debug Log
+        console.log(`[VAD] Mode: ${modeRef.current} | Metering: ${status.metering}`);
+
+        const currentLevel = status.metering ?? -160;
+
+        if (currentLevel > SILENCE_THRESHOLD_DB) {
           // Speech Detected
           lastAudioDetected.current = Date.now();
           //  console.log("Speaking...", status.metering);
         } else {
           // Silence
           const timeSilence = Date.now() - lastAudioDetected.current;
-          if (timeSilence > 5000) { // 5 Seconds Spec
-            console.log("Silence limit reached. Stopping...");
+          // Dynamic limit: 5s for Aphasia User, 3s for Partner
+          const inputMode = modeRef.current;
+          const silenceLimit = inputMode === 'SPEAK' ? 5000 : 3000;
+
+          if (timeSilence > silenceLimit) {
+            console.log(`Silence limit (${silenceLimit}ms) reached. Stopping...`);
             stopRecordingLogic(newRecording);
           }
         }
@@ -176,6 +289,8 @@ export default function ConversationScreen() {
     isRecordingRef.current = false;
     setIsRecording(false)
     setIsLoading(true)
+
+    // Stop Web VAD - Removed, integrated in stopAndUnloadAsync
 
     try {
       await recInstance.stopAndUnloadAsync()
@@ -301,6 +416,12 @@ export default function ConversationScreen() {
   const playTTS = (text, isSlow = false) => {
     if (!text) return Promise.resolve();
     return new Promise(async (resolve) => {
+      // Safety Timeout (e.g., 8 seconds max for TTS)
+      const timeout = setTimeout(() => {
+        console.log("TTS Timeout reached. Resolving to unblock.");
+        resolve();
+      }, 8000);
+
       try {
         console.log(`Requesting TTS for: "${text}" (Slow: ${isSlow})`);
         const response = await fetch(`${BACKEND_URL}/api/tts`, {
@@ -312,6 +433,28 @@ export default function ConversationScreen() {
         if (!response.ok) throw new Error("TTS Failed");
 
         const blob = await response.blob();
+
+        // --- WEB IMPLEMENTATION ---
+        if (Platform.OS === 'web') {
+          const uri = URL.createObjectURL(blob);
+          const audio = new Audio(uri);
+
+          audio.onended = () => {
+            console.log("Web Audio Finished");
+            clearTimeout(timeout);
+            resolve();
+          };
+          audio.onerror = (e) => {
+            console.error("Web Audio Error", e);
+            clearTimeout(timeout);
+            resolve();
+          };
+
+          await audio.play();
+          return;
+        }
+
+        // --- NATIVE IMPLEMENTATION ---
         const reader = new FileReader();
         reader.readAsDataURL(blob);
         reader.onloadend = async () => {
@@ -320,6 +463,7 @@ export default function ConversationScreen() {
 
           sound.setOnPlaybackStatusUpdate(async (status) => {
             if (status.didJustFinish) {
+              clearTimeout(timeout); // Clear timeout on success
               await sound.unloadAsync();
               resolve();
             }
@@ -329,6 +473,7 @@ export default function ConversationScreen() {
         };
       } catch (err) {
         console.error("TTS Error:", err);
+        clearTimeout(timeout);
         resolve(); // Resolve anyway
       }
     });
@@ -362,8 +507,9 @@ export default function ConversationScreen() {
           <View style={[styles.textBox, styles.rotated, { width: '100%', alignItems: 'center', opacity: 1 }]}>
             <Text style={styles.displayText}>
               {/* Show User Text (Speak Mode) OR Simplified Text (Listen Mode) */}
+              {/* If in Listen Mode but no simplified text yet, keep showing the User's last text (displayedSentence) */}
               {isListenMode
-                ? (simplifiedText || "Listening to partner...")
+                ? (simplifiedText || displayedSentence || "Listening to partner...")
                 : (displayedSentence || "Select a phrase...")
               }
             </Text>
@@ -406,28 +552,57 @@ export default function ConversationScreen() {
           ) : null}
 
           {/* Moved Buttons Outside ResultBox for Logic/Accessibility */}
-          {isListenMode && (
+          {isSpeakMode && simplifiedText && (
             <View style={{ marginTop: 20 }}>
               <Pressable
                 disabled={!simplifiedText}
                 onPress={async () => {
-                  // Logic to call Simplify More
+                  console.log("Simplify More: Clicked");
+                  // STOP Recording manually to avoid conflict
+                  if (recording) {
+                    try {
+                      console.log("Simplify More: Stopping current recording...");
+                      await recording.stopAndUnloadAsync();
+                    } catch (e) {
+                      console.log("Simplify More: Stop Error (ignoring)", e);
+                    }
+                  }
+                  setIsRecording(false);
+                  isRecordingRef.current = false;
+                  setRecording(null);
+
+                  setIsLoading(true);
+
                   try {
+                    console.log("Simplify More: Fetching...");
                     const res = await fetch(`${BACKEND_URL}/api/listen/simplify-more`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ text: simplifiedText })
                     });
                     const data = await res.json();
+                    console.log("Simplify More: Got Data", data);
+
                     if (data.simplified) {
                       setSimplifiedText(data.simplified);
+
                       // Play TTS and WAIT for it to finish
+                      console.log("Simplify More: Playing TTS...");
                       await playTTS(data.simplified, true);
-                      // THEN switch to Speak mode
-                      setMode('SPEAK');
+                      console.log("Simplify More: TTS Done.");
+
+                      // Restart Recording manually
+                      console.log("Simplify More: Restarting Recording...");
+                      await startRecording();
+                      console.log("Simplify More: Recording Restarted.");
                     }
                   } catch (e) {
                     console.error("Simplify More Error", e);
+                    // Ensure we restart if error
+                    await startRecording();
+                  } finally {
+                    console.log("Simplify More: Finally (Loading False)");
+                    setIsLoading(false);
                   }
                 }}
                 style={({ pressed }) => [
