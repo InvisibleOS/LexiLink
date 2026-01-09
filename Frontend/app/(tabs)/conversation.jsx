@@ -497,16 +497,16 @@ export default function ConversationScreen() {
         <View style={styles.actionRow}>
           <Pressable
             onPress={handleAcknowledge}
-            style={[styles.smallButton, styles.aphasiaOk, isSpeakMode && styles.disabledButton]}
-            disabled={isSpeakMode}
+            style={[styles.smallButton, styles.aphasiaOk, isListenMode && styles.disabledButton]}
+            disabled={isListenMode}
           >
             <Text style={styles.buttonText}>Okay</Text>
           </Pressable>
           <View style={{ width: 15 }} />
           <Pressable
             onPress={handleRepeat}
-            style={[styles.smallButton, styles.repeatButton, isSpeakMode && styles.disabledButton]}
-            disabled={isSpeakMode}
+            style={[styles.smallButton, styles.repeatButton, isListenMode && styles.disabledButton]}
+            disabled={isListenMode}
           >
             <Text style={styles.buttonText}>Repeat</Text>
           </Pressable>
