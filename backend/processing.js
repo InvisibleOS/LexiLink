@@ -41,26 +41,22 @@ async function getExpressSuggestions(userText, history = []) {
     // Extract last partner message for specific context
     const lastPartnerMsg = history.filter(h => h.role !== 'user').pop()?.content || "No context.";
 
+    // Functional Prompt: Input + Context -> Output
     const prompt = `
-You are facilitating a conversation for a person with Aphasia (USER).
-The USER is trying to reply to their PARTNER.
+Context (Partner's Question): "${lastPartnerMsg}"
+User's Input (Broken Speech): "${userText}"
 
-CONTEXT (What PARTNER just said):
-"${lastPartnerMsg}"
+Task: Convert the User's Input into a complete, natural sentence that answers the Partner.
+Note: The User is replying to the Partner.
 
-USER'S CURRENT INPUT (Broken Speech):
-"${userText}"
+Example:
+Context: "How are you?"
+Input: "Good"
+Output: "I am doing well."
 
-YOUR TASK:
-1. Interpret the USER'S INPUT as a response to the PARTNER.
-2. Expand the USER'S broken speech into a Polite, Grammatically Correct sentence.
-3. CRITICAL: Do NOT repeat the PARTNER'S text. You are the USER speaking.
-4. If the User says "Good", and Partner asked "How are you?", the Output should be "I am doing good."
-5. Provide 3 diverse options (Formal, Casual, Short).
-6. Return ONLY valid JSON:
+Provide the single best response in JSON:
 {
-  "suggestions": ["Option 1", "Option 2", "Option 3"],
-  "bestSuggestion": "Option 1"
+  "bestSuggestion": "..."
 }
 `;
 
@@ -74,7 +70,6 @@ YOUR TASK:
                 temperature: 0.5,
                 max_tokens: 300,
                 mockResponse: JSON.stringify({
-                    suggestions: ["I would like some water, please.", "Could you help me with this?", "I am feeling tired today."],
                     bestSuggestion: "I would like some water, please."
                 })
             }
@@ -85,14 +80,16 @@ YOUR TASK:
             parsed = JSON.parse(content);
         } catch (e) {
             console.error("Failed to parse JSON from OpenAI in getExpressSuggestions:", content);
-            parsed = { suggestions: [content.trim()], bestSuggestion: content.trim() };
+            parsed = { bestSuggestion: content.trim() };
         }
 
-        if (!Array.isArray(parsed.suggestions) || parsed.suggestions.length === 0) {
-            parsed.suggestions = [userText];
-        }
         if (!parsed.bestSuggestion) {
-            parsed.bestSuggestion = parsed.suggestions[0];
+            // Fallback if model behaves unexpectedly
+            parsed.bestSuggestion = Array.isArray(parsed.suggestions) ? parsed.suggestions[0] : userText;
+        }
+        // Ensure suggestions array exists for consistency, even if containing only bestSuggestion
+        if (!parsed.suggestions) {
+            parsed.suggestions = [parsed.bestSuggestion];
         }
 
         return parsed; // Returns { suggestions: [], bestSuggestion: "" }

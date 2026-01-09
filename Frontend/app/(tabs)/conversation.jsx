@@ -21,7 +21,7 @@ import { playTTS, playTTSData } from '../../utils/ttsUtils';
 const BACKEND_URL = 'http://127.0.0.1:4000' // Use IP to avoid localhost resolution issues
 
 
-const AUTO_SWITCH_DELAY = 300 // Reduced to 300ms for even faster conversation flow
+const AUTO_SWITCH_DELAY = 800 // Increased to 800ms to ensure TTS echo is gone before recording starts
 
 // --- QA AUTOMATION SUITE REMOVED --- 
 // Production Mode Active
@@ -51,6 +51,7 @@ export default function ConversationScreen() {
   const isRecordingRef = React.useRef(false); // To track in callbacks without stale closures
   const maxRecordingTimeoutRef = React.useRef(null); // Force stop timer
   const hasSpeechStartedRef = React.useRef(false); // Track if user spoke
+  const isSpeakingAudioRef = React.useRef(false);  // Track TTS playback state to prevent loopback
   const webAudioRef = React.useRef(null); // Web VAD context
 
   const isSpeakMode = mode === 'SPEAK'
@@ -67,12 +68,13 @@ export default function ConversationScreen() {
 
   // Auto-Start Handling when mode changes
   React.useEffect(() => {
-    // Small delay to ensure cleanup of previous mode
+    // Increase delay to Ensure TTS echo is gone (800ms)
+    // Check isSpeakingAudioRef inside
     const timer = setTimeout(() => {
-      if (!isRecordingRef.current) {
+      if (!isRecordingRef.current && !isSpeakingAudioRef.current) {
         startRecording();
       }
-    }, 500);
+    }, 800);
     return () => clearTimeout(timer);
   }, [mode]);
 
@@ -134,8 +136,19 @@ export default function ConversationScreen() {
       let newRecording;
 
       if (Platform.OS === 'web') {
+        // Wait if TTS is playing (Loopback Prevention)
+        if (isSpeakingAudioRef.current) {
+          console.log("Blocked startWebRecording: TTS Playing");
+          return;
+        }
         newRecording = await startWebRecording();
       } else {
+        // Wait if TTS is playing
+        if (isSpeakingAudioRef.current) {
+          console.log("Blocked Native Rec: TTS Playing");
+          return;
+        }
+
         await Audio.setAudioModeAsync({
           allowsRecordingIOS: true,
           playsInSilentModeIOS: true,
@@ -293,9 +306,13 @@ export default function ConversationScreen() {
         // If we have audio, play it
         if (data.bestSuggestionAudio) {
           console.log("Playing Instant Audio...");
+          isSpeakingAudioRef.current = true;
           await playTTSData(data.bestSuggestionAudio);
+          isSpeakingAudioRef.current = false;
         } else {
+          isSpeakingAudioRef.current = true;
           await playTTS(data.bestSuggestion, false, BACKEND_URL);
+          isSpeakingAudioRef.current = false;
         }
 
         // Auto-Switch to Listen Mode
@@ -479,8 +496,9 @@ export default function ConversationScreen() {
         {/* Simplify More */}
         <View style={styles.actionRow}>
           <Pressable
-            // Enable if there is text to simplify, regardless of mode (User request)
-            disabled={!simplifiedText || isLoading}
+            // Enable ONLY in Speak Mode (User wants to simplify Partner's execution)
+            // AND if there is text to simplify
+            disabled={modeRef.current !== 'SPEAK' || !simplifiedText || isLoading}
             onPress={async () => {
               if (isLoading) return;
 
