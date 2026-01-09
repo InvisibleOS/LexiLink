@@ -429,7 +429,7 @@ export default function ConversationScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor }]}>
       <StatusBar style="dark" />
 
       {/* --- TOP: PARTNER CONTROLS (Rotated) --- */}
@@ -448,7 +448,7 @@ export default function ConversationScreen() {
             disabled={!isPartnerTurn}
             style={[styles.smallButton, styles.aphasiaOk, !isPartnerTurn && styles.disabledButton]}
           >
-            <Text style={styles.buttonText}>Okay</Text>
+            <Text style={styles.buttonText}>Understood</Text>
           </Pressable>
         </View>
       </View>
@@ -482,19 +482,19 @@ export default function ConversationScreen() {
         {isSpeakMode && (
           <View style={styles.quickPhraseGrid}>
             <View style={styles.gridRow}>
-              <Pressable style={[styles.gridBtn, { backgroundColor: '#D1F2EB', marginRight: 10 }]} onPress={() => handlePhraseSelect("Yes")}>
-                <Text style={styles.gridTxt}>✅ Yes</Text>
+              <Pressable style={[styles.gridBtn, { backgroundColor: '#D1F2EB', marginRight: 10 }]} onPress={() => handlePhraseSelect("Yes, that is correct")}>
+                <Text style={styles.gridTxt}>✅</Text>
               </Pressable>
-              <Pressable style={[styles.gridBtn, { backgroundColor: '#FADBD8' }]} onPress={() => handlePhraseSelect("No")}>
-                <Text style={styles.gridTxt}>❌ No</Text>
+              <Pressable style={[styles.gridBtn, { backgroundColor: '#E8DAEF' }]} onPress={() => handlePhraseSelect("I have aphasia, please be patient")}>
+                <Text style={styles.gridTxt}>ℹ️</Text>
               </Pressable>
             </View>
             <View style={styles.gridRow}>
-              <Pressable style={[styles.gridBtn, { backgroundColor: '#FCF3CF', marginRight: 10 }]} onPress={() => handlePhraseSelect("Please wait")}>
-                <Text style={styles.gridTxt}>✋ Wait</Text>
+              <Pressable style={[styles.gridBtn, { backgroundColor: '#FCF3CF', marginRight: 10 }]} onPress={() => handlePhraseSelect("Give me a moment")}>
+                <Text style={styles.gridTxt}>✋</Text>
               </Pressable>
-              <Pressable style={[styles.gridBtn, { backgroundColor: '#E8DAEF' }]} onPress={() => handlePhraseSelect("I need help")}>
-                <Text style={styles.gridTxt}>🆘 Help</Text>
+              <Pressable style={[styles.gridBtn, { backgroundColor: '#FADBD8' }]} onPress={() => handlePhraseSelect("I need help")}>
+                <Text style={styles.gridTxt}>🆘</Text>
               </Pressable>
             </View>
           </View>
@@ -570,7 +570,7 @@ export default function ConversationScreen() {
             style={[styles.smallButton, styles.aphasiaOk, !isUserTurn && styles.disabledButton]}
             disabled={!isUserTurn}
           >
-            <Text style={styles.buttonText}>Okay</Text>
+            <Text style={[styles.buttonText, { fontSize: 40 }]}>👍</Text>
           </Pressable>
           <View style={{ width: 15 }} />
           <Pressable
@@ -578,7 +578,7 @@ export default function ConversationScreen() {
             style={[styles.smallButton, styles.repeatButton, !isUserTurn && styles.disabledButton]}
             disabled={!isUserTurn}
           >
-            <Text style={styles.buttonText}>Repeat</Text>
+            <Text style={[styles.buttonText, { fontSize: 40 }]}>🔁</Text>
           </Pressable>
         </View>
 
@@ -605,7 +605,7 @@ export default function ConversationScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F7F2E7',
+    // backgroundColor: '#F7F2E7', // Removed static bg
   },
 
   // --- PARTNER (TOP) ---
@@ -613,7 +613,7 @@ const styles = StyleSheet.create({
     flex: 0.14, // Reduced slightly to give space to User
     justifyContent: 'center',
     paddingHorizontal: 20,
-    backgroundColor: '#EAEAEA',
+    backgroundColor: 'rgba(234, 234, 234, 0.5)', // Semi-transparent for blending
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
     paddingBottom: 10,
@@ -676,7 +676,7 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#999',
+    color: '#333', // Darker for visibility on pastel
     textTransform: 'uppercase',
   },
   recording: { color: '#D32F2F' },
@@ -700,9 +700,9 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 3,
   },
   gridTxt: {
-    fontSize: 22, // Larger text
-    fontWeight: '800', // Bolder
-    color: '#333',
+    fontSize: 55, // Large Emojis
+    textAlign: 'center',
+    color: '#000',
   },
 
   // Actions
@@ -731,9 +731,9 @@ const styles = StyleSheet.create({
   },
 
   // Colors
-  aphasiaOk: { backgroundColor: '#4CAF50' }, // Green
-  repeatButton: { backgroundColor: '#2196F3' }, // Blue
-  endButton: { backgroundColor: '#F44336' }, // Red
+  aphasiaOk: { backgroundColor: '#B8E6C9' }, // Light Green (Old)
+  repeatButton: { backgroundColor: '#C9C3E6' }, // Light Purple (Old)
+  endButton: { backgroundColor: '#7A1F1F' }, // Dark Red (Old)
   disabledButton: { opacity: 0.3 },
 
   buttonText: {
