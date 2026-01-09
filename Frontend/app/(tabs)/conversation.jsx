@@ -371,14 +371,38 @@ export default function ConversationScreen() {
   const backgroundColor = isSpeakMode ? '#D6E4F0' : '#DCEFE3'
 
   // Determine content & rotation
-  const mainContent = isListenMode
-    ? (simplifiedText || displayedSentence || "Waiting for partner...")
-    : (displayedSentence || "Speak now...")
+  // Priority: Current Speaker's Text -> Other Speaker's Text (Context) -> Default Prompt
+  let mainContent = "";
+  let rotation = '0deg';
+  let readerHint = "↓ Read this ↓";
 
-  // Listen Mode (Partner Speaking) -> User Reads -> 0deg
-  // Speak Mode (User Speaking) -> Partner Reads -> 180deg
-  // Animated rotation could be nice, but simple switch is functional
-  const rotation = isListenMode ? '0deg' : '180deg';
+  if (isSpeakMode) {
+    // User's Turn
+    if (displayedSentence) {
+      // User has spoken. Show to Partner.
+      mainContent = displayedSentence;
+      rotation = '180deg';
+      readerHint = "↑ Show Partner ↑";
+    } else {
+      // User hasn't spoken. Show Partner's last text (Context for User).
+      mainContent = simplifiedText || "Speak now...";
+      rotation = '0deg';
+      readerHint = "↓ Read context ↓";
+    }
+  } else {
+    // Partner's Turn
+    if (simplifiedText) {
+      // Partner has spoken. Show to User.
+      mainContent = simplifiedText;
+      rotation = '0deg';
+      readerHint = "↓ Read this ↓";
+    } else {
+      // Partner hasn't spoken. Show User's last text (Context for Partner).
+      mainContent = displayedSentence || "Waiting for partner...";
+      rotation = '180deg';
+      readerHint = "↑ Partner reading ↑";
+    }
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -412,7 +436,7 @@ export default function ConversationScreen() {
             {mainContent}
           </Text>
           <Text style={styles.readerHint}>
-            {isListenMode ? "↓ Read this ↓" : "↑ Show Partner ↑"}
+            {readerHint}
           </Text>
         </View>
       </View>
