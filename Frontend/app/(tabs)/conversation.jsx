@@ -129,7 +129,8 @@ export default function ConversationScreen() {
   const startRecording = async () => {
     try {
       // Cleanup any existing
-      if (recording) {
+      // Cleanup any existing ONLY if logically recording
+      if (recording && isRecordingRef.current) {
         try { await recording.stopAndUnloadAsync() } catch (e) { }
       }
 
