@@ -56,6 +56,10 @@ export default function ConversationScreen() {
   const isSpeakMode = mode === 'SPEAK'
   const isListenMode = mode === 'LISTEN'
 
+  // Semantic Turn Variables for Clarity
+  const isUserTurn = isSpeakMode;
+  const isPartnerTurn = isListenMode;
+
   const modeRef = React.useRef(mode);
   React.useEffect(() => {
     modeRef.current = mode;
@@ -385,16 +389,16 @@ export default function ConversationScreen() {
         <View style={styles.rotatedControls}>
           <Pressable
             onPress={handleRepeat}
-            disabled={isListenMode}
-            style={[styles.smallButton, styles.repeatButton, isListenMode && styles.disabledButton]}
+            disabled={!isPartnerTurn}
+            style={[styles.smallButton, styles.repeatButton, !isPartnerTurn && styles.disabledButton]}
           >
             <Text style={styles.buttonText}>Repeat</Text>
           </Pressable>
           <View style={{ width: 15 }} />
           <Pressable
             onPress={handleAcknowledge}
-            disabled={isListenMode}
-            style={[styles.smallButton, styles.aphasiaOk, isListenMode && styles.disabledButton]}
+            disabled={!isPartnerTurn}
+            style={[styles.smallButton, styles.aphasiaOk, !isPartnerTurn && styles.disabledButton]}
           >
             <Text style={styles.buttonText}>Okay</Text>
           </Pressable>
@@ -497,16 +501,16 @@ export default function ConversationScreen() {
         <View style={styles.actionRow}>
           <Pressable
             onPress={handleAcknowledge}
-            style={[styles.smallButton, styles.aphasiaOk, mode !== 'SPEAK' && styles.disabledButton]}
-            disabled={mode !== 'SPEAK'}
+            style={[styles.smallButton, styles.aphasiaOk, !isUserTurn && styles.disabledButton]}
+            disabled={!isUserTurn}
           >
             <Text style={styles.buttonText}>Okay</Text>
           </Pressable>
           <View style={{ width: 15 }} />
           <Pressable
             onPress={handleRepeat}
-            style={[styles.smallButton, styles.repeatButton, mode !== 'SPEAK' && styles.disabledButton]}
-            disabled={mode !== 'SPEAK'}
+            style={[styles.smallButton, styles.repeatButton, !isUserTurn && styles.disabledButton]}
+            disabled={!isUserTurn}
           >
             <Text style={styles.buttonText}>Repeat</Text>
           </Pressable>
@@ -596,9 +600,7 @@ const styles = StyleSheet.create({
     padding: 15,
     justifyContent: 'flex-end',
     paddingBottom: 20,
-    paddingBottom: 20,
     gap: 12, // Optimized gap
-    zIndex: 20, // Ensure buttons are on top of everything
   },
   statusContainer: {
     alignItems: 'center',
