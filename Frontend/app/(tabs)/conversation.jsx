@@ -479,9 +479,12 @@ export default function ConversationScreen() {
         {/* Simplify More */}
         <View style={styles.actionRow}>
           <Pressable
-            disabled={!isListenMode || !simplifiedText || isLoading}
+            // Enable if there is text to simplify, regardless of mode (User request)
+            disabled={!simplifiedText || isLoading}
             onPress={async () => {
               if (isLoading) return;
+
+              // Stop current recording to "Restart" session
               if (recording) { try { await recording.stopAndUnloadAsync(); } catch (e) { } }
               setIsRecording(false);
               isRecordingRef.current = false;
@@ -504,6 +507,8 @@ export default function ConversationScreen() {
                   setSimplifiedText(data.simplified);
                   if (data.audio) await playTTSData(data.audio);
                   else await playTTS(data.simplified, true, BACKEND_URL);
+
+                  // Restart Express Mode (Fresh Timer/Recording)
                   await startRecording();
                 }
               } catch (e) { alert("Failed."); } finally { setIsLoading(false); }
@@ -511,8 +516,8 @@ export default function ConversationScreen() {
             style={({ pressed }) => [
               styles.fullWidthButton,
               {
-                backgroundColor: (isListenMode && simplifiedText) ? '#FFD700' : '#E0E0E0',
-                opacity: (isListenMode && simplifiedText && !isLoading ? (pressed ? 0.8 : 1) : 0.4)
+                backgroundColor: (simplifiedText) ? '#FFD700' : '#E0E0E0',
+                opacity: (simplifiedText && !isLoading ? (pressed ? 0.8 : 1) : 0.4)
               }
             ]}
           >
