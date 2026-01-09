@@ -265,6 +265,11 @@ export default function ConversationScreen() {
       alert('Error connecting to backend: ' + err.message)
     } finally {
       setIsLoading(false)
+      // Resume recording if not already started (by manual switch)
+      if (!isRecordingRef.current) {
+        console.log("Resuming recording...");
+        startRecording();
+      }
     }
   }
 
@@ -374,7 +379,6 @@ export default function ConversationScreen() {
 
       <View style={styles.bottomZone}>
 
-        {/* PHRASE AREA (LOCKED HEIGHT) */}
         <View style={styles.phraseArea}>
           {isSpeakMode && (
             <View style={styles.phraseGrid}>
@@ -459,6 +463,7 @@ export default function ConversationScreen() {
           )} 
           */}
         </View>
+
 
         <View style={styles.controls}>
           {/* Status Indicator moved above buttons */}
