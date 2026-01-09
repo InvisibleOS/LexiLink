@@ -499,7 +499,7 @@ export default function ConversationScreen() {
           <Pressable
             // Enable ONLY in Speak Mode (User wants to simplify Partner's execution)
             // AND if there is text to simplify
-            disabled={modeRef.current !== 'SPEAK' || !simplifiedText || isLoading}
+            disabled={!isUserTurn || !String(simplifiedText).trim() || isLoading}
             onPress={async () => {
               if (isLoading) return;
 
