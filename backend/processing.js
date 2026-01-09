@@ -27,6 +27,7 @@ async function openAIChat(messages, options = {}) {
                 "Content-Type": "application/json",
                 "api-key": AZURE_OPENAI_KEY,
             },
+            timeout: 10000, // 10s timeout to prevent hang
         });
         return response.data.choices[0].message.content;
     } catch (err) {
@@ -102,11 +103,19 @@ Your job:
 }
 
 // Listen mode: complex sentence -> simplified sentences
-async function simplifySpeech(inputText) {
+async function simplifySpeech(inputText, history = []) {
+    // Format history for context (last 3 turns to avoid token limit)
+    const recentHistory = history.slice(-3);
+    const historyText = recentHistory.map(msg => `${msg.role === 'user' ? 'Aphasia User' : 'Partner'}: "${msg.content}"`).join("\n");
+
     const prompt = `
 You are helping a person with aphasia understand spoken language. The input might be fast, complex, or long.
 Your job is to simplify the text for a person with aphasia.
-Original speech:
+
+Context (Last 3 turns):
+${historyText}
+
+Original speech (Partner said):
 "${inputText}"
 
 Rules:

@@ -6,7 +6,7 @@ const multer = require("multer");
 
 const { getExpressSuggestions, simplifySpeech } = require("./processing");
 const { transcribeAudioBuffer } = require("./stt");
-const { synthesizeTextToAudio } = require("./tts");
+const { synthesizeTextToAudio, synthesizeTextToBase64 } = require("./tts");
 const upload = multer();
 
 const app = express();
@@ -35,10 +35,22 @@ app.post("/api/express", async (req, res) => {
     }
 
     const { suggestions, bestSuggestion } = await getExpressSuggestions(text, history);
+
+    // Generate audio for bestSuggestion immediately
+    let bestSuggestionAudio = null;
+    if (bestSuggestion) {
+      try {
+        bestSuggestionAudio = await synthesizeTextToBase64(bestSuggestion, false); // Normal speed
+      } catch (ttse) {
+        console.error("TTS generation failed for express:", ttse.message);
+      }
+    }
+
     res.json({
       transcript: text,
       suggestions,
       bestSuggestion,
+      bestSuggestionAudio
     });
   } catch (err) {
     console.error("Error in /api/express:", err.response?.data || err.message || err);
@@ -53,15 +65,26 @@ app.post("/api/express", async (req, res) => {
  */
 app.post("/api/listen", async (req, res) => {
   try {
-    const { text } = req.body || {};
+    const { text, history } = req.body || {};
     if (!text || !text.trim()) {
       return res.status(400).json({ error: "text is required" });
     }
 
-    const simplified = await simplifySpeech(text);
+    const simplified = await simplifySpeech(text, history);
+
+    let audio = null;
+    if (simplified) {
+      try {
+        audio = await synthesizeTextToBase64(simplified, true); // Slow speed for Listen mode
+      } catch (e) {
+        console.error("TTS failed for listen:", e.message);
+      }
+    }
+
     res.json({
       transcript: text,
       simplified,
+      audio
     });
   } catch (err) {
     console.error("Error in /api/listen:", err.response?.data || err.message || err);
@@ -83,12 +106,23 @@ app.post("/api/listen/simplify-more", async (req, res) => {
     }
 
     // Using the NEW simplifyMore logic
+    // Using the NEW simplifyMore logic
     const { simplifyMore } = require("./processing");
     const moreSimple = await simplifyMore(text);
+
+    let audio = null;
+    if (moreSimple) {
+      try {
+        audio = await synthesizeTextToBase64(moreSimple, true); // Slow speed
+      } catch (e) {
+        console.error("TTS failed for simplify-more:", e.message);
+      }
+    }
 
     res.json({
       original: text,
       simplified: moreSimple,
+      audio
     });
   } catch (err) {
     console.error("Error in /api/listen/simplify-more:", err.message);
@@ -147,10 +181,20 @@ app.post("/api/express/audio", upload.single("audio"), async (req, res) => {
 
     const { suggestions, bestSuggestion } = await getExpressSuggestions(transcript, history);
 
+    let bestSuggestionAudio = null;
+    if (bestSuggestion) {
+      try {
+        bestSuggestionAudio = await synthesizeTextToBase64(bestSuggestion, false);
+      } catch (e) {
+        console.error("TTS failed for express audio:", e.message);
+      }
+    }
+
     res.json({
       transcript,
       suggestions,
       bestSuggestion,
+      bestSuggestionAudio
     });
   } catch (err) {
     console.error("Error in /api/express/audio:", err.message || err);
@@ -172,11 +216,30 @@ app.post("/api/listen/audio", upload.single("audio"), async (req, res) => {
     }
 
     // 2. Processing
-    const simplified = await simplifySpeech(transcript);
+    let history = [];
+    if (req.body.history) {
+      try {
+        history = typeof req.body.history === 'string' ? JSON.parse(req.body.history) : req.body.history;
+      } catch (e) {
+        console.warn("Failed to parse history in /api/listen/audio", e);
+      }
+    }
+
+    const simplified = await simplifySpeech(transcript, history);
+
+    let audio = null;
+    if (simplified) {
+      try {
+        audio = await synthesizeTextToBase64(simplified, true);
+      } catch (e) {
+        console.error("TTS failed for listen audio:", e.message);
+      }
+    }
 
     res.json({
       transcript,
       simplified,
+      audio
     });
   } catch (err) {
     console.error("Error in /api/listen/audio:", err.message || err);
