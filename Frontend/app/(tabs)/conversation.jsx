@@ -533,10 +533,15 @@ export default function ConversationScreen() {
                   isSpeakingAudioRef.current = false;
 
                   // Restart Express Mode (Fresh Timer/Recording)
+                  // Restart Express Mode (Fresh Timer/Recording)
                   // Add buffer to ensure clean state (500ms - Reduced for responsiveness)
-                  setTimeout(async () => {
+                  // Use Promise delay to maintain execution context
+                  await new Promise(resolve => setTimeout(resolve, 500));
+
+                  // Double-check flags to ensure startRecording isn't blocked erroneously
+                  if (!isLoading) {
                     await startRecording();
-                  }, 500);
+                  }
                 }
               } catch (e) { alert("Failed."); } finally { setIsLoading(false); }
             }}
