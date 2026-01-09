@@ -27,6 +27,7 @@ async function openAIChat(messages, options = {}) {
                 "Content-Type": "application/json",
                 "api-key": AZURE_OPENAI_KEY,
             },
+            timeout: 10000, // 10s timeout to prevent hang
         });
         return response.data.choices[0].message.content;
     } catch (err) {
@@ -37,26 +38,25 @@ async function openAIChat(messages, options = {}) {
 
 // Express mode: broken speech -> suggestions[] + bestSuggestion
 async function getExpressSuggestions(userText, history = []) {
-    // Format history for the prompt
-    const historyText = history.map(msg => `${msg.role === 'user' ? 'User' : 'Partner'}: "${msg.content}"`).join("\n");
+    // Extract last partner message for specific context
+    const lastPartnerMsg = history.filter(h => h.role !== 'user').pop()?.content || "No context.";
 
+    // Functional Prompt: Input + Context -> Output
     const prompt = `
-You are helping a person with aphasia communicate. They often speak in broken, incomplete, or keyword-based language.
+Context (Partner's Question): "${lastPartnerMsg}"
+User's Input (Broken Speech): "${userText}"
 
-Conversation History:
-${historyText}
+Task: Convert the User's Input into a complete, natural sentence that answers the Partner.
+Note: The User is replying to the Partner.
 
-Current User Input (Broken Speech): "${userText}"
+Example:
+Context: "How are you?"
+Input: "Good"
+Output: "I am doing well."
 
-Your job:
-1. Infer the intended meaning from the broken speech, using the conversation history as context.
-2. Reconstruct it into grammatical, complete, and polite English sentences.
-3. Provide 3 diverse options ranging from casual to slightly formal.
-4. Select the "best" option that fits the conversation flow most naturally.
-5. Return ONLY valid JSON like:
+Provide the single best response in JSON:
 {
-  "suggestions": ["Option 1", "Option 2", "Option 3"],
-  "bestSuggestion": "Option 1"
+  "bestSuggestion": "..."
 }
 `;
 
@@ -70,7 +70,6 @@ Your job:
                 temperature: 0.5,
                 max_tokens: 300,
                 mockResponse: JSON.stringify({
-                    suggestions: ["I would like some water, please.", "Could you help me with this?", "I am feeling tired today."],
                     bestSuggestion: "I would like some water, please."
                 })
             }
@@ -81,14 +80,16 @@ Your job:
             parsed = JSON.parse(content);
         } catch (e) {
             console.error("Failed to parse JSON from OpenAI in getExpressSuggestions:", content);
-            parsed = { suggestions: [content.trim()], bestSuggestion: content.trim() };
+            parsed = { bestSuggestion: content.trim() };
         }
 
-        if (!Array.isArray(parsed.suggestions) || parsed.suggestions.length === 0) {
-            parsed.suggestions = [userText];
-        }
         if (!parsed.bestSuggestion) {
-            parsed.bestSuggestion = parsed.suggestions[0];
+            // Fallback if model behaves unexpectedly
+            parsed.bestSuggestion = Array.isArray(parsed.suggestions) ? parsed.suggestions[0] : userText;
+        }
+        // Ensure suggestions array exists for consistency, even if containing only bestSuggestion
+        if (!parsed.suggestions) {
+            parsed.suggestions = [parsed.bestSuggestion];
         }
 
         return parsed; // Returns { suggestions: [], bestSuggestion: "" }
@@ -102,11 +103,19 @@ Your job:
 }
 
 // Listen mode: complex sentence -> simplified sentences
-async function simplifySpeech(inputText) {
+async function simplifySpeech(inputText, history = []) {
+    // Format history for context (last 3 turns to avoid token limit)
+    const recentHistory = history.slice(-3);
+    const historyText = recentHistory.map(msg => `${msg.role === 'user' ? 'Aphasia User' : 'Partner'}: "${msg.content}"`).join("\n");
+
     const prompt = `
 You are helping a person with aphasia understand spoken language. The input might be fast, complex, or long.
 Your job is to simplify the text for a person with aphasia.
-Original speech:
+
+Context (Last 3 turns):
+${historyText}
+
+Original speech (Partner said):
 "${inputText}"
 
 Rules:

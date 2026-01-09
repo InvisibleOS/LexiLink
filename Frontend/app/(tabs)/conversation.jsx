@@ -6,6 +6,7 @@ import {
   Pressable,
   SafeAreaView,
   Platform,
+  ScrollView,
 } from 'react-native'
 import {
   useLocalSearchParams,
@@ -13,17 +14,23 @@ import {
   useFocusEffect,
 } from 'expo-router'
 import { Audio } from 'expo-av'
+import { StatusBar } from 'expo-status-bar'
+import { startWebRecording } from '../../utils/audioUtils';
+import { playTTS, playTTSData } from '../../utils/ttsUtils';
 
-const BACKEND_URL = 'http://localhost:4000' // Update if needed
+const BACKEND_URL = 'http://127.0.0.1:4000' // Use IP to avoid localhost resolution issues
 
 
-const AUTO_SWITCH_DELAY = 3000
+const AUTO_SWITCH_DELAY = 800 // Increased to 800ms to ensure TTS echo is gone before recording starts
+
+// --- QA AUTOMATION SUITE REMOVED --- 
+// Production Mode Active
 
 export default function ConversationScreen() {
   const router = useRouter()
   const { startMode } = useLocalSearchParams()
 
-  const [mode, setMode] = useState('SPEAK')
+  const [mode, setMode] = useState(startMode || 'LISTEN')
   const [displayedSentence, setDisplayedSentence] = useState('')
 
   // Audio & Data State
@@ -34,16 +41,25 @@ export default function ConversationScreen() {
   const [bestSuggestion, setBestSuggestion] = useState(null) // New: Best option
   const [simplifiedText, setSimplifiedText] = useState('') // For Listen Mode
 
-  // New: Conversation History State
-  const [conversationHistory, setConversationHistory] = useState([])
+  // Conversation History for Context
+  // Format: [{ role: 'user' | 'assistant', content: '...' }]
+  const [history, setHistory] = useState([]);
 
   // VAD State
   const lastAudioDetected = React.useRef(Date.now())
-  const SILENCE_THRESHOLD_DB = -45 // Adjustable
+  const SILENCE_THRESHOLD_DB = -45 // Adjusted: -45 was cutting off speech. -60 too sensitive.
   const isRecordingRef = React.useRef(false); // To track in callbacks without stale closures
+  const maxRecordingTimeoutRef = React.useRef(null); // Force stop timer
+  const hasSpeechStartedRef = React.useRef(false); // Track if user spoke
+  const isSpeakingAudioRef = React.useRef(false);  // Track TTS playback state to prevent loopback
+  const webAudioRef = React.useRef(null); // Web VAD context
 
   const isSpeakMode = mode === 'SPEAK'
   const isListenMode = mode === 'LISTEN'
+
+  // Semantic Turn Variables for Clarity
+  const isUserTurn = isSpeakMode;
+  const isPartnerTurn = isListenMode;
 
   const modeRef = React.useRef(mode);
   React.useEffect(() => {
@@ -52,12 +68,13 @@ export default function ConversationScreen() {
 
   // Auto-Start Handling when mode changes
   React.useEffect(() => {
-    // Small delay to ensure cleanup of previous mode
+    // Increase delay to Ensure TTS echo is gone (800ms)
+    // Check isSpeakingAudioRef inside
     const timer = setTimeout(() => {
-      if (!isRecordingRef.current) {
+      if (!isRecordingRef.current && !isSpeakingAudioRef.current) {
         startRecording();
       }
-    }, 500);
+    }, 800);
     return () => clearTimeout(timer);
   }, [mode]);
 
@@ -66,18 +83,24 @@ export default function ConversationScreen() {
     useCallback(() => {
       // If startMode is provided, sync state
       if (startMode === 'SPEAK' || startMode === 'LISTEN') {
+
+        // Prevent clearing state on simple re-focus (e.g. backgrounding app)
+        if (history.length > 0 || displayedSentence || simplifiedText) {
+          console.log("Focusing Conversation: Resuming existing session...");
+          return;
+        }
+
         setMode(startMode)
         modeRef.current = startMode; // Sync ref immediately
         // If mode is already same, useEffect[mode] won't trigger re-start.
         // So we explicitly trigger start logic here if needed.
         // Or better: Stop any previous, then start fresh.
-        console.log("Focusing Conversation. Mode:", startMode);
-
         // Reset data
         setDisplayedSentence('')
         setSuggestions([])
         setBestSuggestion(null)
         setSimplifiedText('')
+        setHistory([]); // Clear history on new session
 
         // Force restart recording
         // Small timeout to allow any previous cleanup or mode setState to process
@@ -91,7 +114,6 @@ export default function ConversationScreen() {
   // Cleanup on Unmount
   React.useEffect(() => {
     return () => {
-      console.log("Unmounting Conversation... Stopping recording.");
       // We can't access 'recording' state reliably directly in return if closure is stale,
       // but we can use a ref or just ensure logic is robust.
       // Best to rely on isRecordingRef to stop loops, and attempt unload if possible.
@@ -100,63 +122,88 @@ export default function ConversationScreen() {
     };
   }, []);
 
+  // --- Web Recording Implementation ---
+  // Moved to utils/audioUtils.js
+
   // --- Audio Handlers ---
   const startRecording = async () => {
     try {
       // Cleanup any existing
-      if (recording) {
+      // Cleanup any existing ONLY if logically recording
+      if (recording && isRecordingRef.current) {
         try { await recording.stopAndUnloadAsync() } catch (e) { }
       }
 
-      const perm = await Audio.requestPermissionsAsync()
-      if (perm.status !== 'granted') {
-        // alert('Permission to access microphone is required!') // Silent fail prefer
-        return
+      let newRecording;
+
+      if (Platform.OS === 'web') {
+        // Wait if TTS is playing (Loopback Prevention)
+        if (isSpeakingAudioRef.current) {
+          console.log("Blocked startWebRecording: TTS Playing");
+          return;
+        }
+        newRecording = await startWebRecording();
+      } else {
+        // Wait if TTS is playing
+        if (isSpeakingAudioRef.current) {
+          console.log("Blocked Native Rec: TTS Playing");
+          return;
+        }
+
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: true,
+          playsInSilentModeIOS: true,
+        })
+        const result = await Audio.Recording.createAsync(
+          { ...Audio.RecordingOptionsPresets.HIGH_QUALITY, isMeteringEnabled: true }
+        )
+        newRecording = result.recording;
       }
 
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      })
-
-      const { recording: newRecording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      )
-
       setRecording(newRecording)
       setIsRecording(true)
       isRecordingRef.current = true;
-      setRecording(newRecording)
-      setIsRecording(true)
-      isRecordingRef.current = true;
+      hasSpeechStartedRef.current = false; // Reset speech tracker
       lastAudioDetected.current = Date.now();
 
-      // Clear text when STARTING to record for the NEW mode
-      if (isSpeakMode) {
-        setDisplayedSentence(''); // Clear user text when user starts speaking
-      } else {
-        setSimplifiedText(''); // Clear partner text when partner starts speaking
-      }
+      // Clear text when STARTING to record?
+      // User Request: "display the processed output of the previous speaker as well."
+      // So we do NOT clear the *other* person's text.
+      // We might want to clear *our* previous text though to indicate new input?
+      // Actually, let's keep everything until new data arrives to prevent flickering.
 
       // VAD Monitoring
       newRecording.setOnRecordingStatusUpdate((status) => {
         if (!isRecordingRef.current) return;
 
-        if (status.metering > SILENCE_THRESHOLD_DB) {
+        const currentLevel = status.metering ?? -160;
+
+        if (currentLevel > SILENCE_THRESHOLD_DB) {
           // Speech Detected
           lastAudioDetected.current = Date.now();
-          //  console.log("Speaking...", status.metering);
+          hasSpeechStartedRef.current = true;
         } else {
           // Silence
           const timeSilence = Date.now() - lastAudioDetected.current;
-          if (timeSilence > 5000) { // 5 Seconds Spec
-            console.log("Silence limit reached. Stopping...");
+          // Dynamic limit: 5s for Aphasia User, 3s for Partner
+          const inputMode = modeRef.current;
+          const silenceLimit = inputMode === 'SPEAK' ? 5000 : 3000;
+
+          // Only stop if speech HAS started AND we've exceeded the silence limit
+          if (hasSpeechStartedRef.current && timeSilence > silenceLimit) {
             stopRecordingLogic(newRecording);
           }
         }
       });
       // Enable metering
       await newRecording.setProgressUpdateInterval(200);
+
+      // --- Hard Timeout Safety Net (Battery Protection) ---
+      // We removed the short 5s limit. Now we just have a long fallback (e.g. 60s)
+      // in case someone leaves the app running in a quiet room.
+      maxRecordingTimeoutRef.current = setTimeout(() => {
+        if (isRecordingRef.current) stopRecordingLogic(newRecording);
+      }, 60000);
 
     } catch (err) {
       console.error('Failed to start recording', err)
@@ -173,9 +220,18 @@ export default function ConversationScreen() {
 
     // Prevent double calling
     if (!isRecordingRef.current) return;
+
+    // Clear Hard Timeout
+    if (maxRecordingTimeoutRef.current) {
+      clearTimeout(maxRecordingTimeoutRef.current);
+      maxRecordingTimeoutRef.current = null;
+    }
+
     isRecordingRef.current = false;
-    setIsRecording(false)
+    setIsRecording(false); // <--- FIXED: Ensure UI updates immediately
     setIsLoading(true)
+
+    // Stop Web VAD - Removed, integrated in stopAndUnloadAsync
 
     try {
       await recInstance.stopAndUnloadAsync()
@@ -200,18 +256,16 @@ export default function ConversationScreen() {
       }
 
       // Send History
-      formData.append('history', JSON.stringify(conversationHistory))
+      formData.append('history', JSON.stringify(history))
 
       // USE REF for determining current mode logic
       // This prevents stale closure issues when simple `isSpeakMode` is captured from old render
       const currentMode = modeRef.current;
       const endpoint = currentMode === 'SPEAK' ? '/api/express/audio' : '/api/listen/audio'
-      console.log(`Processing Audio for Mode: ${currentMode} -> ${endpoint}`)
 
       const response = await fetch(`${BACKEND_URL}${endpoint}`, {
         method: 'POST',
         body: formData,
-        // headers: { 'Content-Type': 'multipart/form-data' }, // Remove for fetch+FormData
       })
 
       if (!response.ok) {
@@ -219,42 +273,74 @@ export default function ConversationScreen() {
       }
 
       const data = await response.json()
-      console.log('Backend response:', data)
+
+      // --- Robustness: Handle Empty Responses ---
+      const isEmptySpeak = currentMode === 'SPEAK' && !data.transcript && !data.bestSuggestion;
+      const isEmptyListen = currentMode === 'LISTEN' && !data.simplified;
+
+      if (isEmptySpeak || isEmptyListen) {
+        if (currentMode === 'SPEAK') setDisplayedSentence("(I didn't hear you, trying again...)");
+        if (currentMode === 'LISTEN') setSimplifiedText("(Listening...)");
+
+        // Auto-restart after short delay
+        setTimeout(() => {
+          if (!isRecordingRef.current) startRecording();
+        }, 2000);
+        return; // Skip normal processing
+      }
 
       if (currentMode === 'SPEAK') {
         // Show context
         if (data.transcript) {
-          // REMOVED onscreen display per user request
-          console.log("TRANSCRIPT:", data.transcript);
           // Don't add to history yet, wait for selection
           // setConversationHistory(prev => [...prev, { role: 'user', content: data.transcript }]);
         }
 
-        if (data.suggestions) {
-          setSuggestions(data.suggestions);
+        // Express mode logic
+        setDisplayedSentence(data.bestSuggestion || data.transcript)
+        setSuggestions(data.suggestions || [])
+
+        // Update History (User's Turn)
+        const newHistoryItem = { role: 'user', content: data.bestSuggestion || data.transcript };
+        setHistory(prev => [...prev.slice(-5), newHistoryItem]); // Keep last 6 items
+
+        // If we have audio, play it
+        if (data.bestSuggestionAudio) {
+          console.log("Playing Instant Audio...");
+          isSpeakingAudioRef.current = true;
+          await playTTSData(data.bestSuggestionAudio);
+          isSpeakingAudioRef.current = false;
+        } else {
+          isSpeakingAudioRef.current = true;
+          await playTTS(data.bestSuggestion, false, BACKEND_URL);
+          isSpeakingAudioRef.current = false;
         }
 
-        if (data.bestSuggestion) {
-          console.log("Auto-selecting Best Suggestion:", data.bestSuggestion);
-          setDisplayedSentence(data.bestSuggestion);
-          await playTTS(data.bestSuggestion, false); // Auto-play (Normal)
-
-          // Auto-Switch to Listen Mode
-          setTimeout(() => {
-            console.log("Auto-switching to LISTEN...");
-            setMode('LISTEN');
-          }, AUTO_SWITCH_DELAY);
-        }
+        // Auto-Switch to Listen Mode
+        setTimeout(() => {
+          setMode('LISTEN');
+        }, AUTO_SWITCH_DELAY);
       } else {
         // Listen Mode
         if (data.simplified) {
+          setDisplayedSentence(data.simplified)
           setSimplifiedText(data.simplified)
-          setConversationHistory(prev => [...prev, { role: 'partner', content: data.simplified }])
-          await playTTS(data.simplified, true); // Auto-play (Slow)
+
+          // Update History (Partner's Turn)
+          // We store the ORIGINAL transcript or the SIMPLIFIED?
+          // Storing the original (transcript) gives the AI better context of what the partner *actually* said.
+          const newHistoryItem = { role: 'assistant', content: data.transcript || data.simplified };
+          setHistory(prev => [...prev.slice(-5), newHistoryItem]);
+
+          // Play Audio
+          if (data.audio) {
+            await playTTSData(data.audio)
+          } else {
+            await playTTS(data.simplified, true, BACKEND_URL);
+          }
 
           // Auto-Switch to Speak Mode
           setTimeout(() => {
-            console.log("Auto-switching to SPEAK...");
             setMode('SPEAK');
           }, AUTO_SWITCH_DELAY);
         }
@@ -277,9 +363,9 @@ export default function ConversationScreen() {
 
   const handlePhraseSelect = async (text) => {
     setDisplayedSentence(text)
-    await playTTS(text, false); // Auto-play (Normal)
+    await playTTS(text, false, BACKEND_URL);
     // Add User to History
-    setConversationHistory(prev => [...prev, { role: 'user', content: text }])
+    setHistory(prev => [...prev.slice(-5), { role: 'user', content: text }])
 
     setTimeout(() => setMode('LISTEN'), AUTO_SWITCH_DELAY)
   }
@@ -295,428 +381,364 @@ export default function ConversationScreen() {
     const currentMode = modeRef.current;
 
     if (currentMode === 'LISTEN' && simplifiedText) {
-      await playTTS(simplifiedText, true); // Slow for Listen Mode
+      await playTTS(simplifiedText, true, BACKEND_URL); // Slow for Listen Mode
       setTimeout(() => setMode('SPEAK'), AUTO_SWITCH_DELAY);
     } else if (currentMode === 'SPEAK' && displayedSentence) {
-      await playTTS(displayedSentence, false); // Normal for Speak Mode
+      await playTTS(displayedSentence, false, BACKEND_URL); // Normal for Speak Mode
       setTimeout(() => setMode('LISTEN'), AUTO_SWITCH_DELAY);
     }
   }
 
-  const playTTS = (text, isSlow = false) => {
-    if (!text) return Promise.resolve();
-    return new Promise(async (resolve) => {
-      try {
-        console.log(`Requesting TTS for: "${text}" (Slow: ${isSlow})`);
-        const response = await fetch(`${BACKEND_URL}/api/tts`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, slow: isSlow }),
-        });
-
-        if (!response.ok) throw new Error("TTS Failed");
-
-        const blob = await response.blob();
-        const reader = new FileReader();
-        reader.readAsDataURL(blob);
-        reader.onloadend = async () => {
-          const uri = reader.result;
-          const { sound } = await Audio.Sound.createAsync({ uri });
-
-          sound.setOnPlaybackStatusUpdate(async (status) => {
-            if (status.didJustFinish) {
-              await sound.unloadAsync();
-              resolve();
-            }
-          });
-
-          await sound.playAsync();
-        };
-      } catch (err) {
-        console.error("TTS Error:", err);
-        resolve(); // Resolve anyway
-      }
-    });
-  };
+  // playTTS Moved to utils/ttsUtils.js
 
   const backgroundColor = isSpeakMode ? '#D6E4F0' : '#DCEFE3'
 
+  // Determine content & rotation
+  // Priority: Current Speaker's Text -> Other Speaker's Text (Context) -> Default Prompt
+  let mainContent = "";
+  let rotation = '0deg';
+  let readerHint = "↓ Read this ↓";
+
+  if (isSpeakMode) {
+    // User's Turn
+    if (displayedSentence) {
+      // User has spoken. Show to Partner (unless it's a system message)
+      const isSystemMessage = displayedSentence.startsWith('(');
+      mainContent = displayedSentence;
+      rotation = isSystemMessage ? '0deg' : '180deg';
+      readerHint = isSystemMessage ? "↓ Message ↓" : "↑ Show Partner ↑";
+    } else {
+      // User hasn't spoken. Show Partner's last text (Context for User).
+      mainContent = simplifiedText || "Speak now...";
+      rotation = '0deg';
+      readerHint = "↓ Read context ↓";
+    }
+  } else {
+    // Partner's Turn
+    if (simplifiedText) {
+      // Partner has spoken. Show to User.
+      mainContent = simplifiedText;
+      rotation = '0deg';
+      readerHint = "↓ Read this ↓";
+    } else {
+      // Partner hasn't spoken. Show User's last text (Context for Partner).
+      mainContent = displayedSentence || "Waiting for partner...";
+      rotation = '180deg';
+      readerHint = "↑ Partner reading ↑";
+    }
+  }
+
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor }]}>
+    <SafeAreaView style={styles.container}>
+      <StatusBar style="dark" />
 
-
-      <View style={styles.topZone}>
-        {/* Top Controls (Repeat/Okay) */}
-        <View style={[styles.topControls, styles.rotated]}>
+      {/* --- TOP: PARTNER CONTROLS (Rotated) --- */}
+      <View style={styles.partnerZone}>
+        <View style={styles.rotatedControls}>
           <Pressable
-            onPress={isSpeakMode ? null : handleRepeat}
-            style={[styles.smallButton, styles.repeatButton, isSpeakMode && styles.disabledButton]}
+            onPress={handleRepeat}
+            disabled={!isPartnerTurn}
+            style={[styles.smallButton, styles.repeatButton, !isPartnerTurn && styles.disabledButton]}
           >
-            <Text style={styles.smallButtonText}>Repeat</Text>
+            <Text style={styles.buttonText}>Repeat</Text>
           </Pressable>
+          <View style={{ width: 15 }} />
           <Pressable
-            onPress={isSpeakMode ? null : handleAcknowledge}
-            style={[styles.smallButton, styles.aphasiaOk, isSpeakMode && styles.disabledButton]}
+            onPress={handleAcknowledge}
+            disabled={!isPartnerTurn}
+            style={[styles.smallButton, styles.aphasiaOk, !isPartnerTurn && styles.disabledButton]}
           >
-            <Text style={styles.smallButtonText}>Okay</Text>
+            <Text style={styles.buttonText}>Okay</Text>
           </Pressable>
-        </View>
-
-        <View style={styles.topDisplayArea}>
-          {/* Persistent Rotated Display for Partner */}
-          <View style={[styles.textBox, styles.rotated, { width: '100%', alignItems: 'center', opacity: 1 }]}>
-            <Text style={styles.displayText}>
-              {/* Show User Text (Speak Mode) OR Simplified Text (Listen Mode) */}
-              {isListenMode
-                ? (simplifiedText || "Listening to partner...")
-                : (displayedSentence || "Select a phrase...")
-              }
-            </Text>
-          </View>
         </View>
       </View>
 
+      {/* --- CENTER: DYNAMIC ROTATING DISPLAY --- */}
+      <View style={styles.sharedDisplayContainer}>
+        <View style={[styles.rotatingWrapper, { transform: [{ rotate: rotation }] }]}>
+          <Text style={styles.sharedText} numberOfLines={5} adjustsFontSizeToFit>
+            {mainContent}
+          </Text>
+          <Text style={styles.readerHint}>
+            {readerHint}
+          </Text>
+        </View>
+      </View>
 
-      <View style={styles.bottomZone}>
+      {/* --- BOTTOM: USER CONTROLS --- */}
+      <View style={styles.userZone}>
 
-        <View style={styles.phraseArea}>
-          {isSpeakMode && (
-            <View style={styles.phraseGrid}>
-              <Pressable style={styles.phraseButton} onPress={() => handlePhraseSelect("I need help")}>
-                <Text style={styles.phraseIcon}>🆘</Text>
-                <Text style={styles.phraseText}>I need help</Text>
-              </Pressable>
-              <Pressable style={styles.phraseButton} onPress={() => handlePhraseSelect("Please wait")}>
-                <Text style={styles.phraseIcon}>✋</Text>
-                <Text style={styles.phraseText}>Please wait</Text>
-              </Pressable>
-              <Pressable style={[styles.phraseButton, { backgroundColor: '#E2F0D9' }]} onPress={() => handlePhraseSelect("Yes")}>
-                <Text style={styles.phraseIcon}>✅</Text>
-                <Text style={styles.phraseText}>Yes</Text>
-              </Pressable>
-              <Pressable style={[styles.phraseButton, { backgroundColor: '#FADBD8' }]} onPress={() => handlePhraseSelect("No")}>
-                <Text style={styles.phraseIcon}>❌</Text>
-                <Text style={styles.phraseText}>No</Text>
-              </Pressable>
-            </View>
-          )}
-
-          {/* Logic for Listen Mode Result */}
-          {isListenMode && simplifiedText ? (
-            <View style={styles.resultBox}>
-              <Text style={styles.resultLabel}>Simplified Meaning:</Text>
-              <Text style={styles.resultText}>{simplifiedText}</Text>
-            </View>
-          ) : null}
-
-          {/* Moved Buttons Outside ResultBox for Logic/Accessibility */}
-          {isListenMode && (
-            <View style={{ marginTop: 20 }}>
-              <Pressable
-                disabled={!simplifiedText}
-                onPress={async () => {
-                  // Logic to call Simplify More
-                  try {
-                    const res = await fetch(`${BACKEND_URL}/api/listen/simplify-more`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ text: simplifiedText })
-                    });
-                    const data = await res.json();
-                    if (data.simplified) {
-                      setSimplifiedText(data.simplified);
-                      // Play TTS and WAIT for it to finish
-                      await playTTS(data.simplified, true);
-                      // THEN switch to Speak mode
-                      setMode('SPEAK');
-                    }
-                  } catch (e) {
-                    console.error("Simplify More Error", e);
-                  }
-                }}
-                style={({ pressed }) => [
-                  styles.smallButton,
-                  {
-                    backgroundColor: simplifiedText ? '#FFD700' : '#E0E0E0',
-                    paddingVertical: 18,
-                    borderRadius: 16,
-                    flexDirection: 'row',
-                    justifyContent: 'center',
-                    gap: 8,
-                    opacity: pressed ? 0.8 : 1,
-                    width: '100%'
-                  }
-                ]}
-              >
-                <Text style={{ fontSize: 24, opacity: simplifiedText ? 1 : 0.3 }}>✨</Text>
-                <Text style={[styles.smallButtonText, { fontSize: 18, color: simplifiedText ? '#000' : '#999' }]}>Simplify More</Text>
-              </Pressable>
-            </View>
-          )}
-
-          {/* Logic for Speak Mode Suggestions - HIDDEN per user request */
-          /* 
-          {isSpeakMode && suggestions.length > 0 && (
-            <View style={styles.phraseGrid}>
-              ...
-            </View>
-          )} 
-          */}
+        {/* Status */}
+        <View style={styles.statusContainer}>
+          <Text style={[styles.statusText, isRecording ? styles.recording : null]}>
+            {isRecording
+              ? (isSpeakMode ? "🎤 Listening..." : "👂 Partner Speaking...")
+              : (isLoading ? "⏳ Processing..." : (isSpeakMode ? "Your Turn" : "Partner's Turn"))
+            }
+          </Text>
         </View>
 
-
-        <View style={styles.controls}>
-          {/* Status Indicator moved above buttons */}
-          <View style={[styles.controlButton, isRecording ? styles.recording : styles.recordDefault, { opacity: 0.9, marginBottom: 20 }]}>
-            <Text style={styles.controlText}>
-              {isRecording ? (isSpeakMode ? '🎤 Listening...' : '👂 Listening...') : (isLoading ? '⏳ Processing...' : 'Waiting...')}
-            </Text>
+        {/* Quick Responses (2x2 Grid) - Visible in Speak Mode */}
+        {isSpeakMode && (
+          <View style={styles.quickPhraseGrid}>
+            <View style={styles.gridRow}>
+              <Pressable style={[styles.gridBtn, { backgroundColor: '#D1F2EB', marginRight: 10 }]} onPress={() => handlePhraseSelect("Yes")}>
+                <Text style={styles.gridTxt}>✅ Yes</Text>
+              </Pressable>
+              <Pressable style={[styles.gridBtn, { backgroundColor: '#FADBD8' }]} onPress={() => handlePhraseSelect("No")}>
+                <Text style={styles.gridTxt}>❌ No</Text>
+              </Pressable>
+            </View>
+            <View style={styles.gridRow}>
+              <Pressable style={[styles.gridBtn, { backgroundColor: '#FCF3CF', marginRight: 10 }]} onPress={() => handlePhraseSelect("Please wait")}>
+                <Text style={styles.gridTxt}>✋ Wait</Text>
+              </Pressable>
+              <Pressable style={[styles.gridBtn, { backgroundColor: '#E8DAEF' }]} onPress={() => handlePhraseSelect("I need help")}>
+                <Text style={styles.gridTxt}>🆘 Help</Text>
+              </Pressable>
+            </View>
           </View>
+        )}
+
+        {/* Simplify More */}
+        <View style={styles.actionRow}>
+          <Pressable
+            // Enable ONLY in Speak Mode (User wants to simplify Partner's execution)
+            // AND if there is text to simplify
+            disabled={!isUserTurn || !String(simplifiedText).trim() || isLoading}
+            onPress={async () => {
+              if (isLoading) return;
+
+              // Stop current recording to "Restart" session
+              if (recording) { try { await recording.stopAndUnloadAsync(); } catch (e) { } }
+              setIsRecording(false);
+              isRecordingRef.current = false;
+              setRecording(null);
+              setBestSuggestion(null);
+              setDisplayedSentence(''); // Ensure no ghost text triggers a flip
+              setIsLoading(true);
+
+              const controller = new AbortController();
+              const id = setTimeout(() => controller.abort(), 20000);
+
+              try {
+                const res = await fetch(`${BACKEND_URL}/api/listen/simplify-more`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ text: simplifiedText }),
+                  signal: controller.signal
+                });
+                clearTimeout(id);
+                const data = await res.json();
+                if (data.simplified) {
+                  setSimplifiedText(data.simplified);
+
+                  // Play Audio safe with Lock
+                  try {
+                    isSpeakingAudioRef.current = true;
+                    if (data.audio) await playTTSData(data.audio);
+                    else await playTTS(data.simplified, true, BACKEND_URL);
+                  } finally {
+                    isSpeakingAudioRef.current = false;
+                  }
+
+                  // Restart Express Mode (Fresh Timer/Recording)
+                  // Add buffer to ensure clean state (500ms - Reduced for responsiveness)
+                  setTimeout(async () => {
+                    await startRecording();
+                  }, 500);
+                }
+              } catch (e) { alert("Failed."); } finally { setIsLoading(false); }
+            }}
+            style={({ pressed }) => [
+              styles.fullWidthButton,
+              {
+                backgroundColor: (simplifiedText) ? '#FFD700' : '#E0E0E0',
+                opacity: (simplifiedText && !isLoading ? (pressed ? 0.8 : 1) : 0.4)
+              }
+            ]}
+          >
+            <Text style={{ fontSize: 24, marginRight: 10 }}>✨</Text>
+            <Text style={[styles.buttonText, { color: '#000' }]}>Simplify More</Text>
+          </Pressable>
         </View>
 
-        <View style={styles.midControls}>
+        {/* Control Row */}
+        <View style={styles.actionRow}>
+          <Pressable
+            onPress={handleAcknowledge}
+            style={[styles.smallButton, styles.aphasiaOk, !isUserTurn && styles.disabledButton]}
+            disabled={!isUserTurn}
+          >
+            <Text style={styles.buttonText}>Okay</Text>
+          </Pressable>
+          <View style={{ width: 15 }} />
           <Pressable
             onPress={handleRepeat}
-            style={[styles.smallButton, styles.repeatButton]}
+            style={[styles.smallButton, styles.repeatButton, !isUserTurn && styles.disabledButton]}
+            disabled={!isUserTurn}
           >
-            <Text style={styles.smallButtonText}>Repeat</Text>
+            <Text style={styles.buttonText}>Repeat</Text>
           </Pressable>
+        </View>
 
+        {/* End */}
+        <View style={styles.actionRow}>
           <Pressable
-            onPress={isListenMode ? null : handleAcknowledge}
-            style={[styles.smallButton, styles.aphasiaOk, isListenMode && styles.disabledButton]}
-          >
-            <Text style={styles.smallButtonText}>Okay</Text>
-          </Pressable>
-
-          <Pressable
-            style={[styles.smallButton, styles.endButton]}
+            style={[styles.fullWidthButton, styles.endButton]}
             onPress={async () => {
-              // Stop Recording explicitly
-              if (recording) {
-                try {
-                  await recording.stopAndUnloadAsync();
-                } catch (e) {
-                  console.log("Error stopping on End:", e);
-                }
-              }
+              if (recording) { try { await recording.stopAndUnloadAsync(); } catch (e) { } }
               setIsRecording(false);
               isRecordingRef.current = false;
               router.replace('/');
             }}
           >
-            <Text style={styles.smallButtonText}>End</Text>
+            <Text style={styles.buttonText}>End</Text>
           </Pressable>
         </View>
-      </View>
 
-    </SafeAreaView >
+      </View>
+    </SafeAreaView>
   )
 }
 
-
-
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-
-
-  topZone: {
+  container: {
     flex: 1,
-    padding: 20,
+    backgroundColor: '#F7F2E7',
   },
 
-  topControls: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    minHeight: 70, // 🔒 locked
-  },
-
-  topDisplayArea: {
-    minHeight: 150, // 🔒 locked
+  // --- PARTNER (TOP) ---
+  partnerZone: {
+    flex: 0.14, // Reduced slightly to give space to User
     justifyContent: 'center',
-  },
-
-
-  smallButton: {
-    paddingVertical: 24, // Increased from 14
     paddingHorizontal: 20,
-    borderRadius: 22,
-    flex: 1, // Ensure they take available space in row
-    alignItems: 'center',
-    marginHorizontal: 4,
+    backgroundColor: '#EAEAEA',
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    paddingBottom: 10,
+  },
+  rotatedControls: {
+    flexDirection: 'row',
+    transform: [{ rotate: '180deg' }],
+    justifyContent: 'space-between',
+    height: 75,
   },
 
-  smallButtonText: {
-    color: '#FFFFFF',
-    fontSize: 24, // Increased from 18
+  // --- CENTER (SHARED) ---
+  sharedDisplayContainer: {
+    flex: 0.26, // Allocated remaining space
+    margin: 15,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: '#333',
+    overflow: 'hidden',
+    elevation: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10, // Ensure it's not covered if overlap happens
+  },
+  rotatingWrapper: {
+    padding: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
+    height: '100%',
+  },
+  sharedText: {
+    fontSize: 24, // Slightly smaller to fit better
+    fontWeight: '700',
+    color: '#000',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  readerHint: {
+    fontSize: 12,
+    color: '#888',
+    textTransform: 'uppercase',
+    letterSpacing: 2,
+  },
+
+  // --- USER (BOTTOM) ---
+  userZone: {
+    flex: 0.60, // Increased to 60% for Grid + Buttons
+    padding: 15,
+    justifyContent: 'flex-end',
+    paddingBottom: 20,
+    gap: 12, // Optimized gap
+  },
+  statusContainer: {
+    alignItems: 'center',
+    height: 25,
+    marginBottom: 5,
+  },
+  statusText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#999',
+    textTransform: 'uppercase',
+  },
+  recording: { color: '#D32F2F' },
+
+  // Quick Phrases (2x2)
+  quickPhraseGrid: {
+    height: 160, // Taller Grid (was 140)
+    marginBottom: 5,
+  },
+  gridRow: {
+    flex: 1,
+    flexDirection: 'row',
+    marginBottom: 12, // More space between rows
+  },
+  gridBtn: {
+    flex: 1,
+    borderRadius: 20, // Rounder
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 3,
+  },
+  gridTxt: {
+    fontSize: 22, // Larger text
+    fontWeight: '800', // Bolder
+    color: '#333',
+  },
+
+  // Actions
+  actionRow: {
+    flexDirection: 'row',
+    height: 75, // Taller rows (was 65)
+  },
+
+  // Buttons
+  fullWidthButton: {
+    flex: 1,
+    borderRadius: 25, // Rounder
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 4,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 4,
+  },
+  smallButton: {
+    flex: 1,
+    borderRadius: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 4,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 4,
+  },
+
+  // Colors
+  aphasiaOk: { backgroundColor: '#4CAF50' }, // Green
+  repeatButton: { backgroundColor: '#2196F3' }, // Blue
+  endButton: { backgroundColor: '#F44336' }, // Red
+  disabledButton: { opacity: 0.3 },
+
+  buttonText: {
+    color: '#FFF',
+    fontSize: 24, // Larger text
     fontWeight: '800',
   },
-
-  enabledButton: {
-    backgroundColor: '#0B2545',
-  },
-
-  repeatButton: {
-    backgroundColor: '#C9C3E6',
-  },
-
-  disabledButton: {
-    backgroundColor: '#BFC8C8',
-    opacity: 0.3, // More translucent as requested
-  },
-
-  rotated: {
-    transform: [{ rotate: '180deg' }],
-  },
-
-
-  textBox: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 22,
-  },
-
-  displayText: {
-    fontSize: 22,
-    textAlign: 'center',
-    fontWeight: '500',
-    color: '#1E1E1E',
-  },
-
-  turnCue: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    paddingVertical: 26,
-    alignItems: 'center',
-  },
-
-  turnCueText: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#1E1E1E',
-  },
-
-
-  bottomZone: {
-    flex: 1,
-    padding: 20,
-    justifyContent: 'space-between',
-  },
-
-  phraseArea: {
-    minHeight: 220, // 🔒 locked
-    justifyContent: 'center',
-  },
-
-  phraseGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    gap: 14,
-  },
-
-  phraseButton: {
-    width: '48%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 22,
-    paddingVertical: 22,
-    alignItems: 'center',
-  },
-
-  phraseIcon: {
-    fontSize: 34,
-    marginBottom: 6,
-  },
-
-  phraseText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1E1E1E',
-  },
-
-  controls: {
-    // Was row, now column for stacking status above buttons? 
-    // Actually the JSX structure change handles the vertical stacking (controls View above midControls View)
-    // But we need to make sure 'controls' (Status) is full width 
-    width: '100%',
-    alignItems: 'center',
-  },
-
-  controlButton: {
-    width: '100%', // Full width status bar
-    borderRadius: 24,
-    paddingVertical: 18,
-    alignItems: 'center',
-  },
-
-  aphasiaOk: {
-    backgroundColor: '#B8E6C9',
-  },
-
-  endButton: {
-    backgroundColor: '#7A1F1F',
-  },
-
-  controlText: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  suggestionButton: {
-    width: '100%',
-    marginVertical: 4,
-  },
-  recordDefault: {
-    backgroundColor: '#007AFF',
-  },
-  recording: {
-    backgroundColor: '#FF3B30',
-  },
-  resultBox: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 16,
-    width: '100%',
-    marginBottom: 10,
-  },
-  resultLabel: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 4,
-  },
-  resultText: {
-    fontSize: 22,
-    fontWeight: '600',
-    color: '#1E1E1E',
-  },
-  clearButton: {
-    marginTop: 8,
-    alignSelf: 'flex-end',
-  },
-  clearButtonText: {
-    color: '#007AFF',
-    fontWeight: '600',
-  },
-  bestSuggestionButton: {
-    borderColor: '#007AFF',
-    borderWidth: 2,
-    backgroundColor: '#F0F8FF',
-  },
-  bestLabel: {
-    color: '#007AFF',
-    fontSize: 12,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  bestPhraseText: {
-    color: '#007AFF',
-  },
-  midControls: {
-    flexDirection: 'row',
-    justifyContent: 'space-between', // Spread them out
-    marginBottom: 10,
-    gap: 8, // Smaller gap to fit 3 buttons
-  },
 })
-
-

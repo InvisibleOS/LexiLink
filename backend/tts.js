@@ -34,12 +34,26 @@ async function synthesizeTextToAudio(text, slow = false) {
     let textToSpeak = text;
 
     if (slow) {
-        rate = "0.75";
+        rate = "0.6"; // Slower for clear articulation
         // Inject pauses between words: replace spaces with a break
         // Check for non-empty text to avoid errors
         if (text) {
-            textToSpeak = text.split(' ').join(' <break time="150ms"/> ');
+            // Escape special chars FIRST
+            const escaped = text.replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&apos;');
+
+            textToSpeak = escaped.split(' ').join(' <break time="200ms"/> '); // Increased Pause
         }
+    } else {
+        // Escape standard text too
+        textToSpeak = text.replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&apos;');
     }
 
     const ssml = `
@@ -73,6 +87,12 @@ async function synthesizeTextToAudio(text, slow = false) {
     });
 }
 
+async function synthesizeTextToBase64(text, slow = false) {
+    const audioData = await synthesizeTextToAudio(text, slow);
+    return Buffer.from(audioData).toString('base64');
+}
+
 module.exports = {
     synthesizeTextToAudio,
+    synthesizeTextToBase64
 };
