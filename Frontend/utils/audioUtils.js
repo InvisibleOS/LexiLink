@@ -87,7 +87,6 @@ export const startWebRecording = async () => {
                 return new Promise((resolve) => {
                     mediaRecorder.onstop = () => {
                         const blob = new Blob(chunks, { type: mimeType });
-                        console.log("Recorder Stopped. Chunks:", chunks.length, "Total Blob Size:", blob.size);
                         recordingUri = URL.createObjectURL(blob);
 
                         // Cleanup
