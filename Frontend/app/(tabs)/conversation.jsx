@@ -527,21 +527,19 @@ export default function ConversationScreen() {
                   setSimplifiedText(data.simplified);
 
                   // Play Audio safe with Lock
-                  isSpeakingAudioRef.current = true;
-                  if (data.audio) await playTTSData(data.audio);
-                  else await playTTS(data.simplified, true, BACKEND_URL);
-                  isSpeakingAudioRef.current = false;
+                  try {
+                    isSpeakingAudioRef.current = true;
+                    if (data.audio) await playTTSData(data.audio);
+                    else await playTTS(data.simplified, true, BACKEND_URL);
+                  } finally {
+                    isSpeakingAudioRef.current = false;
+                  }
 
-                  // Restart Express Mode (Fresh Timer/Recording)
                   // Restart Express Mode (Fresh Timer/Recording)
                   // Add buffer to ensure clean state (500ms - Reduced for responsiveness)
-                  // Use Promise delay to maintain execution context
-                  await new Promise(resolve => setTimeout(resolve, 500));
-
-                  // Double-check flags to ensure startRecording isn't blocked erroneously
-                  if (!isLoading) {
+                  setTimeout(async () => {
                     await startRecording();
-                  }
+                  }, 500);
                 }
               } catch (e) { alert("Failed."); } finally { setIsLoading(false); }
             }}
