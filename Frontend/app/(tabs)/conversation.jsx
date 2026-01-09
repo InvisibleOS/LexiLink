@@ -507,6 +507,8 @@ export default function ConversationScreen() {
               setIsRecording(false);
               isRecordingRef.current = false;
               setRecording(null);
+              setBestSuggestion(null);
+              setDisplayedSentence(''); // Ensure no ghost text triggers a flip
               setIsLoading(true);
 
               const controller = new AbortController();
@@ -531,10 +533,10 @@ export default function ConversationScreen() {
                   isSpeakingAudioRef.current = false;
 
                   // Restart Express Mode (Fresh Timer/Recording)
-                  // Add buffer to ensure clean state
+                  // Add buffer to ensure clean state (500ms - Reduced for responsiveness)
                   setTimeout(async () => {
                     await startRecording();
-                  }, 200);
+                  }, 500);
                 }
               } catch (e) { alert("Failed."); } finally { setIsLoading(false); }
             }}
