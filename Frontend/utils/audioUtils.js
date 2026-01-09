@@ -34,9 +34,9 @@ export const startWebRecording = async () => {
         let framesBelowThreshold = 0;
         let isSpeakingState = false;
 
-        const SPEECH_THRESHOLD = 20; // Volume threshold
-        const MIN_SPEECH_FRAMES = 5;  // ~80ms (at 60fps) to confirm speech start
-        const MIN_SILENCE_FRAMES = 15; // ~250ms to confirm silence start
+        const SPEECH_THRESHOLD = 30; // Increased from 20 to 30 to reject background noise
+        const MIN_SPEECH_FRAMES = 5;  // ~80ms to confirm speech start
+        const MIN_SILENCE_FRAMES = 20; // Increased from 15 to 20 for more stable silence detection
 
         const updateMeter = () => {
             if (!isRecordingWeb) return;
