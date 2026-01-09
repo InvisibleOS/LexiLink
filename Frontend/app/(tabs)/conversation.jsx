@@ -397,10 +397,11 @@ export default function ConversationScreen() {
   if (isSpeakMode) {
     // User's Turn
     if (displayedSentence) {
-      // User has spoken. Show to Partner.
+      // User has spoken. Show to Partner (unless it's a system message)
+      const isSystemMessage = displayedSentence.startsWith('(');
       mainContent = displayedSentence;
-      rotation = '180deg';
-      readerHint = "↑ Show Partner ↑";
+      rotation = isSystemMessage ? '0deg' : '180deg';
+      readerHint = isSystemMessage ? "↓ Message ↓" : "↑ Show Partner ↑";
     } else {
       // User hasn't spoken. Show Partner's last text (Context for User).
       mainContent = simplifiedText || "Speak now...";
