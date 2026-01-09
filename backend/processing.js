@@ -38,23 +38,26 @@ async function openAIChat(messages, options = {}) {
 
 // Express mode: broken speech -> suggestions[] + bestSuggestion
 async function getExpressSuggestions(userText, history = []) {
-    // Format history for the prompt
-    const historyText = history.map(msg => `${msg.role === 'user' ? 'User' : 'Partner'}: "${msg.content}"`).join("\n");
+    // Extract last partner message for specific context
+    const lastPartnerMsg = history.filter(h => h.role !== 'user').pop()?.content || "No context.";
 
     const prompt = `
-You are helping a person with aphasia communicate. They often speak in broken, incomplete, or keyword-based language.
+You are facilitating a conversation for a person with Aphasia (USER).
+The USER is trying to reply to their PARTNER.
 
-Conversation History:
-${historyText}
+CONTEXT (What PARTNER just said):
+"${lastPartnerMsg}"
 
-Current User Input (Broken Speech): "${userText}"
+USER'S CURRENT INPUT (Broken Speech):
+"${userText}"
 
-Your job:
-1. Infer the intended meaning from the broken speech, using the conversation history as context.
-2. Reconstruct it into grammatical, complete, and polite English sentences.
-3. Provide 3 diverse options ranging from casual to slightly formal.
-4. Select the "best" option that fits the conversation flow most naturally.
-5. Return ONLY valid JSON like:
+YOUR TASK:
+1. Interpret the USER'S INPUT as a response to the PARTNER.
+2. Expand the USER'S broken speech into a Polite, Grammatically Correct sentence.
+3. CRITICAL: Do NOT repeat the PARTNER'S text. You are the USER speaking.
+4. If the User says "Good", and Partner asked "How are you?", the Output should be "I am doing good."
+5. Provide 3 diverse options (Formal, Casual, Short).
+6. Return ONLY valid JSON:
 {
   "suggestions": ["Option 1", "Option 2", "Option 3"],
   "bestSuggestion": "Option 1"
