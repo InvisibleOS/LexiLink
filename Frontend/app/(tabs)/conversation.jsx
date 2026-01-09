@@ -245,6 +245,7 @@ export default function ConversationScreen() {
       if (Platform.OS === 'web') {
         const resp = await fetch(uri);
         const blob = await resp.blob();
+        console.log("Audio Blob Size:", blob.size, "Type:", blob.type);
         formData.append('audio', blob, 'recording.m4a');
       } else {
         // Native

@@ -34,8 +34,8 @@ export const startWebRecording = async () => {
         let framesBelowThreshold = 0;
         let isSpeakingState = false;
 
-        const SPEECH_THRESHOLD = 25; // Reduced to 25 to capture normal/quiet speech
-        const MIN_SPEECH_FRAMES = 5;  // ~80ms to confirm speech start
+        const SPEECH_THRESHOLD = 30; // Increased to 30 to avoid fan noise/static
+        const MIN_SPEECH_FRAMES = 10;  // ~160ms to confirm speech (ignore pops)
         const MIN_SILENCE_FRAMES = 60; // Increased to 60 (~1s) to bridge pauses
 
         const updateMeter = () => {
@@ -87,6 +87,7 @@ export const startWebRecording = async () => {
                 return new Promise((resolve) => {
                     mediaRecorder.onstop = () => {
                         const blob = new Blob(chunks, { type: mimeType });
+                        console.log("Recorder Stopped. Chunks:", chunks.length, "Total Blob Size:", blob.size);
                         recordingUri = URL.createObjectURL(blob);
 
                         // Cleanup
