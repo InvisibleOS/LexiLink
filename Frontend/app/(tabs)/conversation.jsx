@@ -497,16 +497,16 @@ export default function ConversationScreen() {
         <View style={styles.actionRow}>
           <Pressable
             onPress={handleAcknowledge}
-            style={[styles.smallButton, styles.aphasiaOk, isListenMode && styles.disabledButton]}
-            disabled={isListenMode}
+            style={[styles.smallButton, styles.aphasiaOk, mode !== 'SPEAK' && styles.disabledButton]}
+            disabled={mode !== 'SPEAK'}
           >
             <Text style={styles.buttonText}>Okay</Text>
           </Pressable>
           <View style={{ width: 15 }} />
           <Pressable
             onPress={handleRepeat}
-            style={[styles.smallButton, styles.repeatButton, isListenMode && styles.disabledButton]}
-            disabled={isListenMode}
+            style={[styles.smallButton, styles.repeatButton, mode !== 'SPEAK' && styles.disabledButton]}
+            disabled={mode !== 'SPEAK'}
           >
             <Text style={styles.buttonText}>Repeat</Text>
           </Pressable>
@@ -596,7 +596,9 @@ const styles = StyleSheet.create({
     padding: 15,
     justifyContent: 'flex-end',
     paddingBottom: 20,
+    paddingBottom: 20,
     gap: 12, // Optimized gap
+    zIndex: 20, // Ensure buttons are on top of everything
   },
   statusContainer: {
     alignItems: 'center',
