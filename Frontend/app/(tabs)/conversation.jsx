@@ -523,11 +523,18 @@ export default function ConversationScreen() {
                 const data = await res.json();
                 if (data.simplified) {
                   setSimplifiedText(data.simplified);
+
+                  // Play Audio safe with Lock
+                  isSpeakingAudioRef.current = true;
                   if (data.audio) await playTTSData(data.audio);
                   else await playTTS(data.simplified, true, BACKEND_URL);
+                  isSpeakingAudioRef.current = false;
 
                   // Restart Express Mode (Fresh Timer/Recording)
-                  await startRecording();
+                  // Add buffer to ensure clean state
+                  setTimeout(async () => {
+                    await startRecording();
+                  }, 200);
                 }
               } catch (e) { alert("Failed."); } finally { setIsLoading(false); }
             }}
