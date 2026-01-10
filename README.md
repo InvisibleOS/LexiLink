@@ -1,6 +1,6 @@
-# LexiLink
+# Aphasia Assist
 
-LexiLink is an AI-powered communication partner designed for people with **aphasia** (difficulty producing or understanding language after stroke/brain injury). It helps users express themselves and understand others in real-world conversations, using a phone-only MVP (Android first).
+Aphasia Assist is an AI-powered communication partner designed for people with **aphasia** (difficulty producing or understanding language after stroke/brain injury). It helps users express themselves and understand others in real-world conversations, using a phone-only MVP (Android first).
 
 This project is being built for the **Microsoft Imagine Cup**, and it is designed to use **Azure OpenAI** and **Azure AI Speech** as core components.
 
@@ -19,16 +19,16 @@ People with aphasia often:
 
 ### Solution
 
-LexiLink provides a simple phone-based assistant with two modes:
+Aphasia Assist provides a simple phone-based assistant with two modes:
 
 1. **Express mode – “Say what I want”**
    - User speaks a broken or partial phrase.
-   - LexiLink uses speech recognition and an LLM to generate 2–3 short, clear, polite sentences they might be trying to say.
+   - Aphasia Assist uses speech recognition and an LLM to generate 2–3 short, clear, polite sentences they might be trying to say.
    - User taps a suggestion and the app speaks it aloud to the conversation partner.
 
 2. **Listen mode – “Understand what you say”**
    - User taps Listen and points the phone toward the speaker.
-   - LexiLink transcribes the speech and simplifies it into a short, easy-to-read sentence using basic vocabulary.
+   - Aphasia Assist transcribes the speech and simplifies it into a short, easy-to-read sentence using basic vocabulary.
 
 Focus areas:
 
@@ -77,7 +77,7 @@ Focus areas:
 ## 3. Repository Structure
 
 ```text
-lexilink/
+aphasia-assist/
   backend/
     index.js          # Express app entry
     package.json      # Backend dependencies and scripts
@@ -104,7 +104,7 @@ Health check endpoint.
 ```json
 {
   "status": "ok",
-  "message": "LexiLink backend running"
+  "message": "Aphasia Assist backend running"
 }
 ```
 
@@ -352,7 +352,7 @@ Assuming the app was already created (e.g., Expo):
 
   * [ ] Use of Azure OpenAI.
   * [ ] Use of Azure AI Speech.
-  * [ ] How LexiLink supports accessibility and inclusion.
+  * [ ] How Aphasia Assist supports accessibility and inclusion.
 
 ---
 
@@ -370,4 +370,4 @@ Assuming the app was already created (e.g., Expo):
 
 ---
 
-This README should give any new contributor (or judge) a clear understanding of what LexiLink is, how it is structured, how to run it, and how the project will evolve toward a competition-ready product.
+This README should give any new contributor (or judge) a clear understanding of what Aphasia Assist is, how it is structured, how to run it, and how the project will evolve toward a competition-ready product.

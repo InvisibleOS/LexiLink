@@ -1,7 +1,7 @@
 {
-  "name": "lexilink-backend",
+  "name": "aphasia-assist-backend",
   "version": "1.0.0",
-  "description": "Backend for LexiLink aphasia communication tool",
+  "description": "Backend for Aphasia Assist communication tool",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",

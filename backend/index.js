@@ -18,7 +18,7 @@ app.use(express.json()); // JSON bodies
 
 // Health check
 app.get("/health", (req, res) => {
-  res.json({ status: "ok", message: "LexiLink backend running" });
+  res.json({ status: "ok", message: "Aphasia Assist backend running" });
 });
 
 /**
@@ -254,5 +254,5 @@ app.use((err, req, res, next) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`LexiLink backend listening on port ${PORT}`);
+  console.log(`Aphasia Assist backend listening on port ${PORT}`);
 });

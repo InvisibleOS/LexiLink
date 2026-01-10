@@ -1,4 +1,4 @@
-# LexiLink Backend
+# Aphasia Assist Backend
 
 ## Prerequisites
 - Node.js (v18+)
