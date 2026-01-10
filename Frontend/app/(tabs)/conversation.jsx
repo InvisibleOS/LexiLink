@@ -384,7 +384,7 @@ export default function ConversationScreen() {
       await playTTS(simplifiedText, true, BACKEND_URL); // Slow for Listen Mode
       setTimeout(() => setMode('SPEAK'), AUTO_SWITCH_DELAY);
     } else if (currentMode === 'SPEAK' && displayedSentence) {
-      await playTTS(displayedSentence, false, BACKEND_URL); // Normal for Speak Mode
+      await playTTS(displayedSentence, true, BACKEND_URL); // Slow (User Request)
       setTimeout(() => setMode('LISTEN'), AUTO_SWITCH_DELAY);
     }
   }
