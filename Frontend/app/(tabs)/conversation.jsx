@@ -21,7 +21,7 @@ import { playTTS, playTTSData } from '../../utils/ttsUtils';
 const BACKEND_URL = 'http://127.0.0.1:4000' // Use IP to avoid localhost resolution issues
 
 
-const AUTO_SWITCH_DELAY = 800 // Increased to 800ms to ensure TTS echo is gone before recording starts
+const AUTO_SWITCH_DELAY = 500 // Reduced to 500ms for seamless flow
 
 // --- QA AUTOMATION SUITE REMOVED --- 
 // Production Mode Active
@@ -185,9 +185,9 @@ export default function ConversationScreen() {
         } else {
           // Silence
           const timeSilence = Date.now() - lastAudioDetected.current;
-          // Dynamic limit: 5s for Aphasia User, 3s for Partner
+          // Dynamic limit: 5s for Aphasia User, 2s for Partner (Faster Turn)
           const inputMode = modeRef.current;
-          const silenceLimit = inputMode === 'SPEAK' ? 5000 : 3000;
+          const silenceLimit = inputMode === 'SPEAK' ? 5000 : 2000;
 
           // Only stop if speech HAS started AND we've exceeded the silence limit
           if (hasSpeechStartedRef.current && timeSilence > silenceLimit) {
